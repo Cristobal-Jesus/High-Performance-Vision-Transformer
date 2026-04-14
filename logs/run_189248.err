@@ -1,0 +1,1 @@
+/home/almeida/Cristobal/venv/bin/python: Error while finding module specification for 'transformer.training.train_transformer.py' (ModuleNotFoundError: No module named 'transformer'). Try using 'transformer.training.train_transformer' instead of 'transformer.training.train_transformer.py' as the module name.

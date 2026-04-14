@@ -1,0 +1,7 @@
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/almeida/Cristobal/TrabajoFinGrado/src/transformer/training/train_transformer.py", line 28, in <module>
+    from transformer.training.energy.cpu_energy_meter import RAPLCPUEnergyMeter
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ImportError: cannot import name 'EMLGPUEnergyMeter' from 'transformer.training.energy' (/home/almeida/Cristobal/TrabajoFinGrado/src/transformer/training/energy/__init__.py)

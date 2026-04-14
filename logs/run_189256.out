@@ -1,0 +1,16 @@
+PYTHONPATH: /home/almeida/Cristobal/TrabajoFinGrado/src:
+LD_LIBRARY_PATH: /home/almeida/opt/eml/lib:/home/almeida/opt/confuse/lib:/usr/local/lib:/home/almeida/opt/eml/lib:/home/almeida/opt/confuse/lib:/usr/local/lib:/home/almeida/opt/eml/lib:/home/almeida/opt/confuse/lib:/usr/local/lib:
+EML devices: ['nvml0', 'nvml1']
+Epoch [1/5] Train Loss: 2.7941 | Train Acc: 16.10% | Val Loss: 2.5215 | Val Acc: 26.00%
+Epoch [2/5] Train Loss: 2.4037 | Train Acc: 30.82% | Val Loss: 2.1890 | Val Acc: 38.70%
+Epoch [3/5] Train Loss: 2.2167 | Train Acc: 37.53% | Val Loss: 2.0517 | Val Acc: 43.70%
+Epoch [4/5] Train Loss: 2.0949 | Train Acc: 42.00% | Val Loss: 1.9454 | Val Acc: 47.56%
+Epoch [5/5] Train Loss: 1.9983 | Train Acc: 45.49% | Val Loss: 1.8533 | Val Acc: 51.00%
+Best validation loss: 1.8533
+Best epoch: 5
+GPU energy (nvml0): 246466.1420 J
+Average GPU power: 247.9859 W
+CPU energy (RAPL files): 0.0000 J
+====================================
+End: mar 17 mar 2026 22:48:40 UTC
+====================================
