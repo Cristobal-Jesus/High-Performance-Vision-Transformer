@@ -20,18 +20,19 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torchvision.models import vit_b_16, ViT_B_16_Weights
 
 from transformer.data.dali.datamodule import DaliDataModule
 from transformer.training.losses.focal_loss import FocalLoss
 from transformer.models.transformer_model import VisionTransformer
 from transformer.training.batch_processor import PatchBatchProcessor
-from transformer.training.config import TransformerTrainingConfig
+from ViTB16.training.config import TransformerTrainingConfig
 from transformer.training.energy.cpu_energy_meter import RAPLCPUEnergyMeter
 from transformer.training.energy.gpu_energy_meter import EMLGPUEnergyMeter, SlurmGPUSelector
 from transformer.training.mixup import MixupAugmentor
 from transformer.training.schedulers import SchedulerFactory
 from transformer.training.trainer import TransformerTrainer
-from transformer.visualization.training_plotter import TrainingPlotter
+from ViTB16.visualization.training_plotter import TrainingPlotter
 
 
 torch.backends.cuda.matmul.allow_tf32 = True
@@ -138,21 +139,16 @@ class TransformerTrainingApplication:
 
     def _build_model(self, device: torch.device) -> nn.Module:
         """Create and optionally compile the Transformer model."""
-        model = VisionTransformer(
-            patch_dim=self.config.patch_dim,
-            seq_len=self.config.seq_len,
-            embed_dim=self.config.embed_dim,
-            num_classes=self.config.num_classes,
-            depth=self.config.depth,
-            num_heads=self.config.num_heads,
-            mlp_ratio=self.config.mlp_ratio,
-            dropout=self.config.dropout,
-            drop_path_rate=self.config.drop_path_rate,
-            use_patch_norm=True,
-        ).to(device)
+        weight = ViT_B_16_Weights.DEFAULT
+        vit_model = vit_b_16(weights=weight)
+        vit_model.heads.head = nn.Linear(
+            vit_model.heads.head.in_features,
+            self.config.num_classes
+        )
+        vit_model.to(device)
 
         try:
-            model = torch.compile(model)
+            model = torch.compile(vit_model)
         except Exception as exc:
             print(f"[torch.compile] Disabled: {exc}")
 

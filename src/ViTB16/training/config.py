@@ -22,7 +22,7 @@ from pathlib import Path
 class TransformerTrainingConfig:
     """Store all hyperparameters and paths used during training."""
 
-    root_dir: str = "data/dataset2"
+    root_dir: str = "/home/almeida/Cristobal/Images/dataset2"
     train_batch_size: int = 1536
     val_batch_size: int = 1536
     epochs: int = 5
