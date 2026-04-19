@@ -22,9 +22,8 @@ from pathlib import Path
 class TransformerTrainingConfig:
     """Store all hyperparameters and paths used during training."""
 
-    root_dir: str = "data/dataset2"
-    train_batch_size: int = 1536
-    val_batch_size: int = 1536
+    root_dir: str = "home/bejeque/nhernang/Cristobal/pytorch_models/assets/dataset"
+    val_batch_size: int = 256
     epochs: int = 5
     warmup_epochs: int = 10
     image_size: int = 224
