@@ -20,6 +20,7 @@ References:
 """
 
 import logging
+import typing as t
 from pathlib import Path
 
 import pytorch_lightning as pl
@@ -37,7 +38,7 @@ class DaliDataModule(pl.LightningDataModule):
 
     def __init__(
         self,
-        root_dir: str | Path,
+        root_dir: t.Union[str, Path],
         train_batch_size: int = 1536,
         val_batch_size: int = 512,
         image_size: int = 224,
@@ -74,13 +75,13 @@ class DaliDataModule(pl.LightningDataModule):
         )
         self.pipeline_factory = DaliPipelineFactory()
 
-        self.train_file_list: str | None = None
-        self.val_file_list: str | None = None
-        self.train_loader: DALIGenericIterator | None = None
-        self.val_loader: DALIGenericIterator | None = None
-        self.label_map: dict[str, int] = {}
+        self.train_file_list = None  # type: t.Optional[str]
+        self.val_file_list = None  # type: t.Optional[str]
+        self.train_loader = None  # type: t.Optional[DALIGenericIterator]
+        self.val_loader = None  # type: t.Optional[DALIGenericIterator]
+        self.label_map = {}  # type: t.Dict[str, int]
 
-    def setup(self, stage: str | None = None) -> None:
+    def setup(self, stage: t.Optional[str] = None) -> None:
         """Prepare the DALI pipelines and iterators for training and validation."""
         if stage not in (None, "fit", "validate"):
             return
@@ -172,18 +173,22 @@ class DaliDataModule(pl.LightningDataModule):
     def train_dataloader(self) -> DALIGenericIterator:
         """Return the training data loader."""
         if self.train_loader is None:
-            raise RuntimeError("The training loader has not been initialized. Call setup() first.")
+            raise RuntimeError(
+                "The training loader has not been initialized. Call setup() first."
+            )
 
         return self.train_loader
 
     def val_dataloader(self) -> DALIGenericIterator:
         """Return the validation data loader."""
         if self.val_loader is None:
-            raise RuntimeError("The validation loader has not been initialized. Call setup() first.")
+            raise RuntimeError(
+                "The validation loader has not been initialized. Call setup() first."
+            )
 
         return self.val_loader
 
-    def teardown(self, stage: str | None = None) -> None:
+    def teardown(self, stage: t.Optional[str] = None) -> None:
         """Remove temporary file lists created for DALI."""
         for file_path in (self.train_file_list, self.val_file_list):
             if file_path is None:

@@ -17,8 +17,8 @@ References:
     - https://matplotlib.org/stable/
 """
 
+import typing as t
 from pathlib import Path
-from typing import Any
 
 import matplotlib.pyplot as plt
 
@@ -27,12 +27,12 @@ class TrainingPlotter:
     """Store training history and generate summary plots."""
 
     def __init__(self) -> None:
-        self.train_acc: list[float] = []
-        self.val_acc: list[float] = []
-        self.train_loss: list[float] = []
-        self.val_loss: list[float] = []
-        self.best_val_acc: float | None = None
-        self.best_epoch: int | None = None
+        self.train_acc = []
+        self.val_acc = []
+        self.train_loss = []
+        self.val_loss = []
+        self.best_val_acc = None
+        self.best_epoch = None
 
     def update(
         self,
@@ -54,9 +54,9 @@ class TrainingPlotter:
 
     def plot(
         self,
-        save_path: str | Path | None = "outputs/figures/training_curves.png",
-        energy_stats: dict[str, Any] | None = None,
-        device_info: str | None = None,
+        save_path: t.Optional[t.Union[str, Path]] = "outputs/figures/training_curves.png",
+        energy_stats: t.Optional[t.Dict[str, t.Any]] = None,
+        device_info: t.Optional[str] = None,
     ) -> None:
         """Plot training curves and optionally save them to disk."""
         self._validate_history()
@@ -79,7 +79,7 @@ class TrainingPlotter:
 
         plt.close(fig)
 
-    def _plot_accuracy(self, axis, epochs: list[int]) -> None:
+    def _plot_accuracy(self, axis, epochs: t.List[int]) -> None:
         """Plot training and validation accuracy."""
         axis.plot(epochs, self.train_acc, label="Train Accuracy")
         axis.plot(epochs, self.val_acc, label="Validation Accuracy")
@@ -93,7 +93,7 @@ class TrainingPlotter:
                 label="Best Validation Accuracy",
             )
             axis.annotate(
-                f"{self.best_val_acc:.2f}%",
+                "{:.2f}%".format(self.best_val_acc),
                 (self.best_epoch, self.best_val_acc),
                 textcoords="offset points",
                 xytext=(0, 10),
@@ -107,7 +107,7 @@ class TrainingPlotter:
         axis.set_ylabel("Accuracy")
         axis.legend()
 
-    def _plot_loss(self, axis, epochs: list[int]) -> None:
+    def _plot_loss(self, axis, epochs: t.List[int]) -> None:
         """Plot training and validation loss."""
         axis.plot(epochs, self.train_loss, label="Train Loss")
         axis.plot(epochs, self.val_loss, label="Validation Loss")
@@ -119,19 +119,25 @@ class TrainingPlotter:
     def _add_energy_text(
         self,
         figure,
-        energy_stats: dict[str, Any],
-        device_info: str | None,
+        energy_stats: t.Dict[str, t.Any],
+        device_info: t.Optional[str],
     ) -> None:
         """Add energy and device information to the figure."""
         gpu_joules, cpu_joules, elapsed_seconds = self._extract_energy_stats(energy_stats)
         total_joules = gpu_joules + cpu_joules
 
         text = (
-            f"Device: {device_info or 'Unknown'}\n"
-            f"GPU Energy: {gpu_joules:.4f} J\n"
-            f"CPU Energy: {cpu_joules:.4f} J\n"
-            f"Total Energy: {total_joules:.4f} J\n"
-            f"Time: {elapsed_seconds / 60:.2f} min"
+            "Device: {}\n"
+            "GPU Energy: {:.4f} J\n"
+            "CPU Energy: {:.4f} J\n"
+            "Total Energy: {:.4f} J\n"
+            "Time: {:.2f} min"
+        ).format(
+            device_info or "Unknown",
+            gpu_joules,
+            cpu_joules,
+            total_joules,
+            elapsed_seconds / 60,
         )
 
         figure.text(
@@ -145,8 +151,8 @@ class TrainingPlotter:
 
     def _extract_energy_stats(
         self,
-        energy_stats: dict[str, Any],
-    ) -> tuple[float, float, float]:
+        energy_stats: t.Dict[str, t.Any],
+    ) -> t.Tuple[float, float, float]:
         """Extract GPU energy, CPU energy, and elapsed time from the metrics dictionary."""
         measurements = energy_stats.get("meas", {})
         elapsed_seconds = float(energy_stats.get("elapsed", 0.0))

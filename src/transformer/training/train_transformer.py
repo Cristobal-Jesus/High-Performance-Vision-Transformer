@@ -15,7 +15,7 @@ Description:
     measurement.
 """
 
-from __future__ import annotations
+import typing as t
 
 import torch
 import torch.nn as nn
@@ -169,7 +169,6 @@ class TransformerTrainingApplication:
     def _build_criterion(self) -> nn.Module:
         """Create the training loss."""
         if self.config.use_focal_loss:
-
             return FocalLoss(
                 gamma=self.config.focal_gamma,
                 label_smoothing=self.config.label_smoothing,
@@ -179,11 +178,11 @@ class TransformerTrainingApplication:
 
     def _build_energy_stats(
         self,
-        eml_measurements: dict,
-        gpu_metrics: dict[str, float],
-        cpu_metrics: dict[str, float | bool],
+        eml_measurements: t.Dict[str, t.Any],
+        gpu_metrics: t.Dict[str, float],
+        cpu_metrics: t.Dict[str, t.Union[float, bool]],
         device_key: str,
-    ) -> dict:
+    ) -> t.Dict[str, t.Any]:
         """Merge GPU and CPU measurements into one plot-friendly dictionary."""
         energy_stats = dict(eml_measurements)
         energy_stats[device_key] = dict(eml_measurements[device_key])

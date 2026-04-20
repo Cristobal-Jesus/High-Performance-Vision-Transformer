@@ -20,7 +20,7 @@ References:
 
 import random
 import tempfile
-from collections.abc import Sequence
+import typing as t
 from pathlib import Path
 
 from .validation import DaliImageValidator
@@ -31,7 +31,7 @@ class DatasetSplitManager:
 
     def __init__(
         self,
-        root_dir: str | Path,
+        root_dir: str,
         validator: DaliImageValidator,
         train_ratio: float = 0.8,
         seed: int = 42,
@@ -46,7 +46,14 @@ class DatasetSplitManager:
 
     def create_split(
         self,
-    ) -> tuple[list[str], list[int], list[str], list[int], dict[str, int], list[tuple[str, str]]]:
+    ) -> t.Tuple[
+        t.List[str],
+        t.List[int],
+        t.List[str],
+        t.List[int],
+        t.Dict[str, int],
+        t.List[t.Tuple[str, str]],
+    ]:
         """Create the train/validation split and return metadata."""
         image_paths, labels, label_map, invalid_files = self._scan_dataset()
         x_train, y_train, x_val, y_val = self._split_samples(image_paths, labels)
@@ -54,8 +61,8 @@ class DatasetSplitManager:
 
     def write_file_list(
         self,
-        image_paths: Sequence[str],
-        labels: Sequence[int],
+        image_paths: t.Sequence[str],
+        labels: t.Sequence[int],
         suffix: str,
     ) -> str:
         """Write a temporary DALI file list and return its path."""
@@ -75,7 +82,7 @@ class DatasetSplitManager:
 
     def _scan_dataset(
         self,
-    ) -> tuple[list[str], list[int], dict[str, int], list[tuple[str, str]]]:
+    ) -> t.Tuple[t.List[str], t.List[int], t.Dict[str, int], t.List[t.Tuple[str, str]]]:
         """Scan the dataset root directory and collect valid image paths and labels."""
         if not self.root_dir.is_dir():
             raise FileNotFoundError(f"Dataset directory does not exist: {self.root_dir}")
@@ -86,9 +93,11 @@ class DatasetSplitManager:
 
         label_map = {class_dir.name: index for index, class_dir in enumerate(class_dirs)}
 
-        image_paths: list[str] = []
-        labels: list[int] = []
-        invalid_files: list[tuple[str, str]] = []
+        image_paths: t.List[str] = []
+        labels: t.List[int] = []
+        invalid_files: t.List[t.Tuple[str, str]] = []
+
+        candidates: t.List[t.Tuple[str, int]] = []
 
         for class_dir in class_dirs:
             label = label_map[class_dir.name]
@@ -97,12 +106,21 @@ class DatasetSplitManager:
                 if not image_path.is_file():
                     continue
 
-                is_valid, info = self.validator.validate(image_path)
-                if is_valid:
-                    image_paths.append(str(image_path))
-                    labels.append(label)
-                else:
-                    invalid_files.append((str(image_path), info))
+                candidates.append((str(image_path), label))
+
+        if not candidates:
+            raise RuntimeError("No image files were found in the dataset root.")
+
+        path_to_label = {path: label for path, label in candidates}
+
+        for path, (is_valid, info) in self.validator.validate_many(
+            path for path, _ in candidates
+        ):
+            if is_valid:
+                image_paths.append(path)
+                labels.append(path_to_label[path])
+            else:
+                invalid_files.append((path, info))
 
         if not image_paths:
             raise RuntimeError("No valid images were found for DALI.")
@@ -111,9 +129,9 @@ class DatasetSplitManager:
 
     def _split_samples(
         self,
-        image_paths: Sequence[str],
-        labels: Sequence[int],
-    ) -> tuple[list[str], list[int], list[str], list[int]]:
+        image_paths: t.Sequence[str],
+        labels: t.Sequence[int],
+    ) -> t.Tuple[t.List[str], t.List[int], t.List[str], t.List[int]]:
         """Shuffle the dataset and split it into training and validation subsets."""
         if len(image_paths) != len(labels):
             raise ValueError("image_paths and labels must have the same length.")

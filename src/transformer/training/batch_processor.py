@@ -14,6 +14,8 @@ Description:
     converting images into patch sequences for the Transformer model.
 """
 
+import typing as t
+
 import torch
 from torch import Tensor
 
@@ -31,7 +33,7 @@ class PatchBatchProcessor:
         self,
         data,
         device: torch.device,
-    ) -> tuple[Tensor, Tensor]:
+    ) -> t.Tuple[Tensor, Tensor]:
         """Extract, move, and patchify one DALI batch."""
         images, labels = self.unpack_dali_batch(data)
         images = images.to(device, non_blocking=True)
@@ -40,7 +42,7 @@ class PatchBatchProcessor:
         return patches, labels
 
     @staticmethod
-    def unpack_dali_batch(data) -> tuple[Tensor, Tensor]:
+    def unpack_dali_batch(data) -> t.Tuple[Tensor, Tensor]:
         """Extract images and labels from one DALI iterator item."""
         batch = data[0]
         image_key = "images" if "images" in batch else "x"
@@ -53,7 +55,11 @@ class PatchBatchProcessor:
 
         if height % self.patch_size != 0 or width % self.patch_size != 0:
             raise ValueError(
-                f"Image size ({height}x{width}) is not divisible by patch_size={self.patch_size}."
+                "Image size ({}x{}) is not divisible by patch_size={}.".format(
+                    height,
+                    width,
+                    self.patch_size,
+                )
             )
 
         patches_h = height // self.patch_size

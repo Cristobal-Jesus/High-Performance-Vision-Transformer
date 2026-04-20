@@ -14,6 +14,8 @@ Description:
     training.
 """
 
+import typing as t
+
 import numpy as np
 import torch
 from torch import Tensor
@@ -33,7 +35,7 @@ class MixupAugmentor:
         """Return whether mixup is enabled."""
         return self.alpha > 0.0
 
-    def apply(self, x: Tensor, y: Tensor) -> tuple[Tensor, Tensor, Tensor, float]:
+    def apply(self, x: Tensor, y: Tensor) -> t.Tuple[Tensor, Tensor, Tensor, float]:
         """Apply mixup to one batch."""
         if not self.enabled:
             return x, y, y, 1.0

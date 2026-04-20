@@ -14,6 +14,7 @@ Description:
     and validation loops.
 """
 
+import typing as t
 from contextlib import nullcontext
 from pathlib import Path
 
@@ -40,7 +41,7 @@ class TransformerTrainer:
         device: torch.device,
         batch_processor: PatchBatchProcessor,
         mixup_augmentor: MixupAugmentor,
-        checkpoint_path: str | Path,
+        checkpoint_path: t.Union[str, Path],
         patience: int = 25,
         min_delta: float = 0.0005,
     ) -> None:
@@ -60,7 +61,7 @@ class TransformerTrainer:
 
         self.checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
 
-    def fit(self, epochs: int) -> dict[str, float | int]:
+    def fit(self, epochs: int) -> t.Dict[str, t.Union[float, int]]:
         """Run the full training process."""
         best_val_loss = float("inf")
         best_epoch = -1
@@ -106,7 +107,7 @@ class TransformerTrainer:
             "best_epoch": best_epoch,
         }
 
-    def _train_one_epoch(self, epoch: int, epochs: int) -> dict[str, float]:
+    def _train_one_epoch(self, epoch: int, epochs: int) -> t.Dict[str, float]:
         """Train the model for one epoch."""
         self.model.train()
         train_loss_sum = 0.0
@@ -122,7 +123,9 @@ class TransformerTrainer:
             with self._autocast_context():
                 outputs = self.model(patches)
                 if self.mixup_augmentor.enabled:
-                    loss = lam * self.criterion(outputs, y_a) + (1.0 - lam) * self.criterion(outputs, y_b)
+                    loss = lam * self.criterion(outputs, y_a) + (
+                        1.0 - lam
+                    ) * self.criterion(outputs, y_b)
                 else:
                     loss = self.criterion(outputs, labels)
 
@@ -148,7 +151,7 @@ class TransformerTrainer:
             "train_acc": 100.0 * train_correct / max(1, train_total),
         }
 
-    def _validate_one_epoch(self) -> dict[str, float]:
+    def _validate_one_epoch(self) -> t.Dict[str, float]:
         """Evaluate the model on the validation split."""
         self.model.eval()
         val_loss_sum = 0.0
@@ -184,5 +187,5 @@ class TransformerTrainer:
     def _autocast_context(self):
         """Return the autocast context used during forward passes."""
         if self.device.type == "cuda":
-            return torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16)
+            return torch.amp.autocast(device_type="cuda", dtype=torch.float16)
         return nullcontext()

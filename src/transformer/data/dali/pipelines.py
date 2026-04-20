@@ -17,9 +17,8 @@ References:
     - https://docs.nvidia.com/deeplearning/dali/user-guide/docs/
 """
 
-from collections.abc import Sequence
 
-from typing import Tuple
+import typing as t
 import nvidia.dali.fn as fn
 import nvidia.dali.types as types
 from nvidia.dali.pipeline import pipeline_def
@@ -30,16 +29,16 @@ class DaliPipelineFactory:
 
     def __init__(
         self,
-        mean: Sequence[float] | None = None,
-        std: Sequence[float] | None = None,
+        mean: t.Optional[t.Sequence[float]] = None,
+        std: t.Optional[t.Sequence[float]] = None,
         horizontal_flip_probability: float = 0.5,
         grayscale_probability: float = 0.15,
         erasing_probability: float = 0.25,
-        brightness_range: Tuple[float, float] = (0.85, 1.15),
-        contrast_range: Tuple[float, float] = (0.85, 1.15),
-        saturation_range: Tuple[float, float] = (0.80, 1.20),
-        hue_range: Tuple[float, float] = (-10.0, 10.0),
-        erasing_area_range: Tuple[float, float] = (0.02, 0.20),
+        brightness_range: t.Tuple[float, float] = (0.85, 1.15),
+        contrast_range: t.Tuple[float, float] = (0.85, 1.15),
+        saturation_range: t.Tuple[float, float] = (0.80, 1.20),
+        hue_range: t.Tuple[float, float] = (-10.0, 10.0),
+        erasing_area_range: t.Tuple[float, float] = (0.02, 0.20),
     ) -> None:
         self.mean = list(mean or [0.485 * 255, 0.456 * 255, 0.406 * 255])
         self.std = list(std or [0.229 * 255, 0.224 * 255, 0.225 * 255])

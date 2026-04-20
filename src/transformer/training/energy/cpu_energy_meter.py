@@ -14,20 +14,22 @@ Description:
     directly from Linux powercap files.
 """
 
-from collections.abc import Callable
+import typing as t
 from pathlib import Path
-from typing import TypeVar
 
-T = TypeVar("T")
+T = t.TypeVar("T")
 
 
 class RAPLCPUEnergyMeter:
     """Measure CPU energy using Linux RAPL sysfs counters."""
 
-    def __init__(self, powercap_root: str | Path = "/sys/class/powercap") -> None:
+    def __init__(self, powercap_root: t.Union[str, Path] = "/sys/class/powercap") -> None:
         self.powercap_root = Path(powercap_root)
 
-    def measure(self, function: Callable[[], T]) -> tuple[T, dict[str, float | bool]]:
+    def measure(
+        self,
+        function: t.Callable[[], T],
+    ) -> t.Tuple[T, t.Dict[str, t.Union[float, bool]]]:
         """Measure CPU energy while executing a callable."""
         domains = self._discover_package_domains()
         if not domains:
@@ -49,12 +51,12 @@ class RAPLCPUEnergyMeter:
             "cpu_rapl_files_j": energy_uj / 1e6,
         }
 
-    def _discover_package_domains(self) -> list[Path]:
+    def _discover_package_domains(self) -> t.List[Path]:
         """Discover top-level Intel RAPL package domains."""
         if not self.powercap_root.exists():
             return []
 
-        domains: list[Path] = []
+        domains = []
         for domain in sorted(self.powercap_root.iterdir()):
             if not domain.is_dir():
                 continue
@@ -67,18 +69,18 @@ class RAPLCPUEnergyMeter:
 
         return domains
 
-    def _read_snapshot(self, domains: list[Path]) -> dict[Path, int]:
+    def _read_snapshot(self, domains: t.List[Path]) -> t.Dict[Path, int]:
         """Read one snapshot of all package energy counters."""
-        snapshot: dict[Path, int] = {}
+        snapshot = {}
         for domain in domains:
             snapshot[domain] = self._read_int(domain / "energy_uj")
         return snapshot
 
     def _compute_energy_uj(
         self,
-        domains: list[Path],
-        start_snapshot: dict[Path, int],
-        end_snapshot: dict[Path, int],
+        domains: t.List[Path],
+        start_snapshot: t.Dict[Path, int],
+        end_snapshot: t.Dict[Path, int],
     ) -> float:
         """Compute consumed energy in microjoules, handling counter wraparound."""
         total_uj = 0.0

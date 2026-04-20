@@ -16,20 +16,19 @@ Description:
 """
 
 import os
-from collections.abc import Callable
-from typing import Any, TypeVar
+import typing as t
 
 from pyeml import measure_energy
 from pyeml.devices import nvml
 from pyeml.units import uj
 
-T = TypeVar("T")
+T = t.TypeVar("T")
 
 
 class SlurmGPUSelector:
     """Resolve the GPU index that should be measured inside a Slurm job."""
 
-    def __init__(self, explicit_index: int | None = None) -> None:
+    def __init__(self, explicit_index: t.Optional[int] = None) -> None:
         self.explicit_index = explicit_index
 
     def resolve_index(self) -> int:
@@ -46,7 +45,7 @@ class SlurmGPUSelector:
         return 0
 
     @staticmethod
-    def _extract_first_numeric_token(value: str) -> int | None:
+    def _extract_first_numeric_token(value: str) -> t.Optional[int]:
         """Extract the first GPU index from a comma-separated environment variable."""
         if not value:
             return None
@@ -61,7 +60,10 @@ class EMLGPUEnergyMeter:
     def __init__(self, gpu_selector: SlurmGPUSelector) -> None:
         self.gpu_selector = gpu_selector
 
-    def measure(self, function: Callable[[], T]) -> tuple[T, dict[str, Any], float, str]:
+    def measure(
+        self,
+        function: t.Callable[[], T],
+    ) -> t.Tuple[T, t.Dict[str, t.Any], float, str]:
         """Measure GPU energy while executing a callable."""
         gpu_index = self.gpu_selector.resolve_index()
 
@@ -70,18 +72,23 @@ class EMLGPUEnergyMeter:
             return function()
 
         result, measurements, elapsed = measured_function()
-        device_key = f"nvml{gpu_index}"
+        device_key = "nvml{}".format(gpu_index)
 
         if device_key not in measurements:
             raise RuntimeError(
-                f"EML did not return measurements for {device_key}. "
-                f"Available keys: {list(measurements.keys())}"
+                "EML did not return measurements for {}. Available keys: {}".format(
+                    device_key,
+                    list(measurements.keys()),
+                )
             )
 
         return result, measurements, elapsed, device_key
 
     @staticmethod
-    def extract_metrics(measurements: dict[str, Any], device_key: str) -> dict[str, float]:
+    def extract_metrics(
+        measurements: t.Dict[str, t.Any],
+        device_key: str,
+    ) -> t.Dict[str, float]:
         """Return normalized GPU metrics in joules, watts, and seconds."""
         device_measurements = measurements[device_key]
 

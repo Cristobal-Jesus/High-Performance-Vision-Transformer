@@ -14,15 +14,17 @@ Description:
     training application.
 """
 
+import typing as t
 from dataclasses import dataclass
 from pathlib import Path
 
 
-@dataclass(slots=True)
+@dataclass
 class TransformerTrainingConfig:
     """Store all hyperparameters and paths used during training."""
 
-    root_dir: str = "home/bejeque/nhernang/Cristobal/pytorch_models/assets/dataset"
+    root_dir: str = "/home/bejeque/nhernang/Cristobal/pytorch_models/assets/dataset"
+    train_batch_size: int = 256
     val_batch_size: int = 256
     epochs: int = 5
     warmup_epochs: int = 10
@@ -48,7 +50,7 @@ class TransformerTrainingConfig:
     drop_last: bool = True
     train_prefetch_queue_depth: int = 10
     val_prefetch_queue_depth: int = 6
-    eml_gpu_index: int | None = None
+    eml_gpu_index: t.Optional[int] = None
     checkpoint_path: Path = Path("checkpoints/transformer/best_transformer_vitb16.pth")
     figure_path: Path = Path("outputs/figures/transformer/H200/training_curves_ViT-B_16.png")
 
