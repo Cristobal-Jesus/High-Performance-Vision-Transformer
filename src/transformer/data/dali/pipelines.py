@@ -5,7 +5,7 @@ Bachelor's Degree in Computer Engineering
 Bachelor's Thesis 2025-2026
 
 Title: High-Computing Perfomance and Machine Learning
-Author: Cristóbal Jesús Sarmiento Rodríguez
+Author: Cristobal Jesus Sarmiento Rodriguez
 Date: 17th March 2026
 File: pipelines.py
 
@@ -17,10 +17,11 @@ References:
     - https://docs.nvidia.com/deeplearning/dali/user-guide/docs/
 """
 
-
 import typing as t
+
 import nvidia.dali.fn as fn
 import nvidia.dali.types as types
+from nvidia.dali import math as dali_math
 from nvidia.dali.pipeline import pipeline_def
 
 
@@ -39,6 +40,17 @@ class DaliPipelineFactory:
         saturation_range: t.Tuple[float, float] = (0.80, 1.20),
         hue_range: t.Tuple[float, float] = (-10.0, 10.0),
         erasing_area_range: t.Tuple[float, float] = (0.02, 0.20),
+        erasing_aspect_ratio_range: t.Tuple[float, float] = (0.3, 3.3),
+        decoder_cache_size: int = 0,
+        decoder_cache_threshold: int = 0,
+        hw_decoder_load: float = 0.9,
+        device_memory_padding: int = 16 * 1024 * 1024,
+        host_memory_padding: int = 8 * 1024 * 1024,
+        preallocate_width_hint: int = 640,
+        preallocate_height_hint: int = 640,
+        reader_prefetch_queue_depth: int = 4,
+        output_dtype: types.DALIDataType = types.FLOAT16,
+        read_ahead: bool = True,
     ) -> None:
         self.mean = list(mean or [0.485 * 255, 0.456 * 255, 0.406 * 255])
         self.std = list(std or [0.229 * 255, 0.224 * 255, 0.225 * 255])
@@ -52,6 +64,18 @@ class DaliPipelineFactory:
         self.saturation_range = saturation_range
         self.hue_range = hue_range
         self.erasing_area_range = erasing_area_range
+        self.erasing_aspect_ratio_range = erasing_aspect_ratio_range
+
+        self.decoder_cache_size = decoder_cache_size
+        self.decoder_cache_threshold = decoder_cache_threshold
+        self.hw_decoder_load = hw_decoder_load
+        self.device_memory_padding = device_memory_padding
+        self.host_memory_padding = host_memory_padding
+        self.preallocate_width_hint = preallocate_width_hint
+        self.preallocate_height_hint = preallocate_height_hint
+        self.reader_prefetch_queue_depth = reader_prefetch_queue_depth
+        self.output_dtype = output_dtype
+        self.read_ahead = read_ahead
 
     def create_train_pipeline(
         self,
@@ -61,7 +85,7 @@ class DaliPipelineFactory:
         device_id: int,
         file_list: str,
         crop: int = 224,
-        prefetch_queue_depth: int = 6,
+        prefetch_queue_depth: int = 3,
     ):
         """Create the DALI pipeline used during training."""
         mean = self.mean
@@ -76,6 +100,16 @@ class DaliPipelineFactory:
         saturation_range = self.saturation_range
         hue_range = self.hue_range
         erasing_area_range = self.erasing_area_range
+        erasing_aspect_ratio_range = self.erasing_aspect_ratio_range
+
+        hw_decoder_load = self.hw_decoder_load
+        device_memory_padding = self.device_memory_padding
+        host_memory_padding = self.host_memory_padding
+        preallocate_width_hint = self.preallocate_width_hint
+        preallocate_height_hint = self.preallocate_height_hint
+        reader_prefetch_queue_depth = self.reader_prefetch_queue_depth
+        output_dtype = self.output_dtype
+        read_ahead = self.read_ahead
 
         @pipeline_def(enable_conditionals=True)
         def pipeline(file_list: str, crop: int = 224):
@@ -84,27 +118,41 @@ class DaliPipelineFactory:
                 random_shuffle=True,
                 name="Reader",
                 stick_to_shard=True,
+                read_ahead=read_ahead,
+                prefetch_queue_depth=reader_prefetch_queue_depth,
+                skip_cached_images=False,
             )
 
-            images = fn.decoders.image(
+            images = fn.decoders.image_random_crop(
                 images,
                 device="mixed",
                 output_type=types.RGB,
-            )
-
-            images = fn.random_resized_crop(
-                images,
-                device="gpu",
-                size=(crop, crop),
                 random_area=(0.8, 1.0),
                 random_aspect_ratio=(0.75, 1.33),
+                hw_decoder_load=hw_decoder_load,
+                device_memory_padding=device_memory_padding,
+                host_memory_padding=host_memory_padding,
+                preallocate_width_hint=preallocate_width_hint,
+                preallocate_height_hint=preallocate_height_hint,
             )
 
-            # Apply color jitter.
+            images = fn.resize(
+                images,
+                device="gpu",
+                resize_x=crop,
+                resize_y=crop,
+            )
+
             brightness = fn.random.uniform(range=brightness_range)
             contrast = fn.random.uniform(range=contrast_range)
-            saturation = fn.random.uniform(range=saturation_range)
             hue = fn.random.uniform(range=hue_range)
+
+            saturation_value = fn.random.uniform(range=saturation_range)
+            do_grayscale = fn.cast(
+                fn.random.coin_flip(probability=grayscale_probability),
+                dtype=types.FLOAT,
+            )
+            saturation = saturation_value * (1.0 - do_grayscale)
 
             images = fn.color_twist(
                 images,
@@ -115,21 +163,17 @@ class DaliPipelineFactory:
                 hue=hue,
             )
 
-            # Apply grayscale augmentation by fully desaturating the image.
-            # This keeps the image in RGB format instead of converting it to 1 channel.
-            do_grayscale = fn.random.coin_flip(probability=grayscale_probability)
-            if do_grayscale:
-                images = fn.color_twist(
-                    images,
-                    device="gpu",
-                    saturation=0.0,
-                )
-
-            # Apply random erasing with normalized coordinates.
             do_erase = fn.random.coin_flip(probability=erasing_probability)
             if do_erase:
-                erase_anchor = fn.random.uniform(range=(0.0, 0.80), shape=[2])
-                erase_shape = fn.random.uniform(range=erasing_area_range, shape=[2])
+                erase_area = fn.random.uniform(range=erasing_area_range)
+                erase_ratio = fn.random.uniform(range=erasing_aspect_ratio_range)
+                erase_h = dali_math.sqrt(erase_area * erase_ratio)
+                erase_w = dali_math.sqrt(erase_area / erase_ratio)
+                erase_shape = fn.stack(erase_h, erase_w)
+
+                anchor_y = fn.random.uniform(range=(0.0, 1.0)) * (1.0 - erase_h)
+                anchor_x = fn.random.uniform(range=(0.0, 1.0)) * (1.0 - erase_w)
+                erase_anchor = fn.stack(anchor_y, anchor_x)
 
                 images = fn.erase(
                     images,
@@ -142,13 +186,12 @@ class DaliPipelineFactory:
                     normalized_shape=True,
                 )
 
-            # Apply horizontal flip.
             mirror = fn.random.coin_flip(probability=horizontal_flip_probability)
 
             images = fn.crop_mirror_normalize(
                 images,
                 device="gpu",
-                dtype=types.FLOAT,
+                dtype=output_dtype,
                 output_layout="CHW",
                 mirror=mirror,
                 mean=mean,
@@ -180,6 +223,17 @@ class DaliPipelineFactory:
         mean = self.mean
         std = self.std
 
+        decoder_cache_size = self.decoder_cache_size
+        decoder_cache_threshold = self.decoder_cache_threshold
+        hw_decoder_load = self.hw_decoder_load
+        device_memory_padding = self.device_memory_padding
+        host_memory_padding = self.host_memory_padding
+        preallocate_width_hint = self.preallocate_width_hint
+        preallocate_height_hint = self.preallocate_height_hint
+        reader_prefetch_queue_depth = self.reader_prefetch_queue_depth
+        output_dtype = self.output_dtype
+        read_ahead = self.read_ahead
+
         @pipeline_def
         def pipeline(file_list: str, size: int = 224):
             images, labels = fn.readers.file(
@@ -187,13 +241,25 @@ class DaliPipelineFactory:
                 random_shuffle=False,
                 name="Reader",
                 stick_to_shard=True,
+                read_ahead=read_ahead,
+                prefetch_queue_depth=reader_prefetch_queue_depth,
+                skip_cached_images=decoder_cache_size > 0,
             )
 
-            images = fn.decoders.image(
-                images,
+            decoder_kwargs = dict(
                 device="mixed",
                 output_type=types.RGB,
+                hw_decoder_load=hw_decoder_load,
+                device_memory_padding=device_memory_padding,
+                host_memory_padding=host_memory_padding,
+                preallocate_width_hint=preallocate_width_hint,
+                preallocate_height_hint=preallocate_height_hint,
             )
+            if decoder_cache_size > 0:
+                decoder_kwargs["cache_size"] = decoder_cache_size
+                decoder_kwargs["cache_threshold"] = decoder_cache_threshold
+
+            images = fn.decoders.image(images, **decoder_kwargs)
 
             images = fn.resize(
                 images,
@@ -205,7 +271,7 @@ class DaliPipelineFactory:
             images = fn.crop_mirror_normalize(
                 images,
                 device="gpu",
-                dtype=types.FLOAT,
+                dtype=output_dtype,
                 output_layout="CHW",
                 mean=mean,
                 std=std,

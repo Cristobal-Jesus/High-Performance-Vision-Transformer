@@ -5,7 +5,7 @@ Bachelor's Degree in Computer Engineering
 Bachelor's Thesis 2025-2026
 
 Title: High-Computing Perfomance and Machine Learning
-Author: Cristóbal Jesús Sarmiento Rodríguez
+Author: Cristobal Jesus Sarmiento Rodriguez
 Date: 17th March 2026
 File: datamodule.py
 
@@ -39,17 +39,23 @@ class DaliDataModule(pl.LightningDataModule):
     def __init__(
         self,
         root_dir: t.Union[str, Path],
-        train_batch_size: int = 1536,
-        val_batch_size: int = 512,
+        train_batch_size: int = 256,
+        val_batch_size: int = 256,
         image_size: int = 224,
         num_threads: int = 24,
         device_id: int = 0,
         seed: int = 42,
         train_ratio: float = 0.8,
         drop_last: bool = True,
-        train_prefetch_queue_depth: int = 6,
+        train_prefetch_queue_depth: int = 3,
         val_prefetch_queue_depth: int = 2,
         verbose_invalid: bool = True,
+        delete_invalid_files: bool = False,
+        pipeline_factory: t.Optional[DaliPipelineFactory] = None,
+        validator: t.Optional[DaliImageValidator] = None,
+        shard_id: int = 0,
+        num_shards: int = 1,
+        show_progress: bool = True,
     ) -> None:
         super().__init__()
 
@@ -65,28 +71,35 @@ class DaliDataModule(pl.LightningDataModule):
         self.train_prefetch_queue_depth = train_prefetch_queue_depth
         self.val_prefetch_queue_depth = val_prefetch_queue_depth
         self.verbose_invalid = verbose_invalid
+        self.delete_invalid_files = delete_invalid_files
+        self.shard_id = shard_id
+        self.num_shards = num_shards
+        self.show_progress = show_progress
 
-        self.validator = DaliImageValidator()
+        self.validator = validator or DaliImageValidator(
+            num_threads=self.num_threads,
+            device_id=self.device_id,
+            delete_invalid=self.delete_invalid_files,
+            batch_size=1024,
+        )
         self.split_manager = DatasetSplitManager(
             root_dir=self.root_dir,
             validator=self.validator,
             train_ratio=self.train_ratio,
             seed=self.seed,
+            show_progress=self.show_progress,
         )
-        self.pipeline_factory = DaliPipelineFactory()
+        self.pipeline_factory = pipeline_factory or DaliPipelineFactory()
 
         self.train_file_list = None  # type: t.Optional[str]
         self.val_file_list = None  # type: t.Optional[str]
         self.train_loader = None  # type: t.Optional[DALIGenericIterator]
         self.val_loader = None  # type: t.Optional[DALIGenericIterator]
         self.label_map = {}  # type: t.Dict[str, int]
+        self._split_done = False
 
-    def setup(self, stage: t.Optional[str] = None) -> None:
-        """Prepare the DALI pipelines and iterators for training and validation."""
-        if stage not in (None, "fit", "validate"):
-            return
-
-        if self.train_loader is not None and self.val_loader is not None:
+    def _ensure_split(self) -> None:
+        if self._split_done:
             return
 
         x_train, y_train, x_val, y_val, self.label_map, invalid_files = (
@@ -116,9 +129,25 @@ class DaliDataModule(pl.LightningDataModule):
             y_val,
             "_val_list.txt",
         )
+        self._split_done = True
 
-        self.train_loader = self._build_train_loader()
-        self.val_loader = self._build_val_loader()
+    def setup(self, stage: t.Optional[str] = None) -> None:
+        """Prepare the DALI pipelines and iterators for training and validation."""
+        if stage not in (None, "fit", "validate"):
+            return
+
+        build_train = stage in (None, "fit") and self.train_loader is None
+        build_val = stage in (None, "fit", "validate") and self.val_loader is None
+
+        if not (build_train or build_val):
+            return
+
+        self._ensure_split()
+
+        if build_train:
+            self.train_loader = self._build_train_loader()
+        if build_val:
+            self.val_loader = self._build_val_loader()
 
     def _build_train_loader(self) -> DALIGenericIterator:
         """Create the DALI iterator used during training."""
@@ -202,3 +231,4 @@ class DaliDataModule(pl.LightningDataModule):
         self.val_file_list = None
         self.train_loader = None
         self.val_loader = None
+        self._split_done = False
