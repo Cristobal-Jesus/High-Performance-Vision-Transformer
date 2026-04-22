@@ -10,16 +10,17 @@ Date: 17th March 2026
 File: config.py
 
 Description:
-    This file defines the configuration object used by the Transformer
+    This file defines the configuration object used by the ResNet
     training application.
 """
 
+import typing as t
 from dataclasses import dataclass
 from pathlib import Path
 
 
-@dataclass()
-class TransformerTrainingConfig:
+@dataclass
+class ResNetTrainingConfig:
     """Store all hyperparameters and paths used during training."""
 
     root_dir: str = "/home/bejeque/nhernang/Cristobal/pytorch_models/assets/dataset"
@@ -28,40 +29,31 @@ class TransformerTrainingConfig:
     epochs: int = 5
     warmup_epochs: int = 10
     image_size: int = 224
-    patch_size: int = 16
     num_classes: int = 20
-    embed_dim: int = 384
-    depth: int = 12
-    num_heads: int = 6
-    mlp_ratio: float = 4.0
-    dropout: float = 0.0
-    drop_path_rate: float = 0.05
+
+    model_name: str = "resnet50"
+    pretrained: bool = True
+
     learning_rate: float = 3e-4
     weight_decay: float = 0.05
     label_smoothing: float = 0.1
     use_focal_loss: bool = False
     focal_gamma: float = 2.0
     mixup_alpha: float = 0.0
+
     patience: int = 25
     min_delta: float = 0.0005
+
     num_threads: int = 32
     device_id: int = 0
     drop_last: bool = True
     train_prefetch_queue_depth: int = 2
     val_prefetch_queue_depth: int = 2
-    eml_gpu_index: int = None
-    checkpoint_path: Path = Path("checkpoints/transformer/best_transformer_vitb16.pth")
-    figure_path: Path = Path("outputs/figures/transformer/V100/training_curves_ViTB16.png")
 
-    @property
-    def patch_dim(self) -> int:
-        """Return the flattened size of one image patch."""
-        return self.patch_size * self.patch_size * 3
+    eml_gpu_index: t.Optional[int] = None
 
-    @property
-    def seq_len(self) -> int:
-        """Return the number of patches per image."""
-        return (self.image_size // self.patch_size) ** 2
+    checkpoint_path: Path = Path("checkpoints/resnet/best_resnet50.pth")
+    figure_path: Path = Path("outputs/figures/convolutional/V100/training_curves_resnet50.png")
 
     @property
     def use_mixup(self) -> bool:
