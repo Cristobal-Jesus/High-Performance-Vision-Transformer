@@ -17,21 +17,23 @@ Description:
 
 from __future__ import annotations
 
+from typing import Dict, Union
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torchvision.models import vit_b_16, ViT_B_16_Weights
+from torchvision.models import ViT_B_16_Weights, vit_b_16
 
 from transformer.data.dali.datamodule import DaliDataModule
-from transformer.training.losses.focal_loss import FocalLoss
 from transformer.models.transformer_model import VisionTransformer
 from transformer.training.batch_processor import PatchBatchProcessor
-from ViTB16.training.config import TransformerTrainingConfig
 from transformer.training.energy.cpu_energy_meter import RAPLCPUEnergyMeter
 from transformer.training.energy.gpu_energy_meter import EMLGPUEnergyMeter, SlurmGPUSelector
+from transformer.training.losses.focal_loss import FocalLoss
 from transformer.training.mixup import MixupAugmentor
 from transformer.training.schedulers import SchedulerFactory
 from transformer.training.trainer import TransformerTrainer
+from ViTB16.training.config import TransformerTrainingConfig
 from ViTB16.visualization.training_plotter import TrainingPlotter
 
 
@@ -50,45 +52,47 @@ class TransformerTrainingApplication:
         """Execute the training workflow."""
         device = self._get_device()
         data_module = self._build_data_module()
-        data_module.setup()
 
-        trainer = self._build_trainer(
-            device=device,
-            train_loader=data_module.train_dataloader(),
-            val_loader=data_module.val_dataloader(),
-        )
+        try:
+            data_module.setup()
 
-        gpu_meter = EMLGPUEnergyMeter(SlurmGPUSelector(self.config.eml_gpu_index))
-        cpu_meter = RAPLCPUEnergyMeter()
+            trainer = self._build_trainer(
+                device=device,
+                train_loader=data_module.train_dataloader(),
+                val_loader=data_module.val_dataloader(),
+            )
 
-        (training_result, eml_measurements, elapsed_total, device_key), cpu_metrics = (
-            cpu_meter.measure(lambda: gpu_meter.measure(lambda: trainer.fit(self.config.epochs)))
-        )
+            gpu_meter = EMLGPUEnergyMeter(SlurmGPUSelector(self.config.device_id))
+            cpu_meter = RAPLCPUEnergyMeter()
 
-        gpu_metrics = gpu_meter.extract_metrics(eml_measurements, device_key)
-        energy_stats = self._build_energy_stats(
-            eml_measurements=eml_measurements,
-            gpu_metrics=gpu_metrics,
-            cpu_metrics=cpu_metrics,
-            device_key=device_key,
-        )
+            (training_result, eml_measurements, elapsed_total, device_key), cpu_metrics = (
+                cpu_meter.measure(lambda: gpu_meter.measure(lambda: trainer.fit(self.config.epochs)))
+            )
 
-        print(f"Best validation loss: {training_result['best_val_loss']:.4f}")
-        print(f"Best epoch: {training_result['best_epoch']}")
-        print(f"GPU energy ({device_key}): {gpu_metrics['gpu_energy_j']:.4f} J")
-        print(f"Average GPU power: {gpu_metrics['gpu_avg_power_w']:.4f} W")
-        print(f"CPU energy (RAPL files): {cpu_metrics['cpu_rapl_files_j']:.4f} J")
+            gpu_metrics = gpu_meter.extract_metrics(eml_measurements, device_key)
+            energy_stats = self._build_energy_stats(
+                eml_measurements=eml_measurements,
+                gpu_metrics=gpu_metrics,
+                cpu_metrics=cpu_metrics,
+                device_key=device_key,
+            )
 
-        trainer.plotter.plot(
-            save_path=self.config.figure_path,
-            energy_stats={
-                "meas": energy_stats,
-                "elapsed": elapsed_total,
-            },
-            device_info=self._get_device_info(),
-        )
+            print(f"Best validation loss: {training_result['best_val_loss']:.4f}")
+            print(f"Best epoch: {training_result['best_epoch']}")
+            print(f"GPU energy ({device_key}): {gpu_metrics['gpu_energy_j']:.4f} J")
+            print(f"Average GPU power: {gpu_metrics['gpu_avg_power_w']:.4f} W")
+            print(f"CPU energy (RAPL files): {cpu_metrics['cpu_rapl_files_j']:.4f} J")
 
-        data_module.teardown()
+            trainer.plotter.plot(
+                save_path=self.config.figure_path,
+                energy_stats={
+                    "meas": energy_stats,
+                    "elapsed": elapsed_total,
+                },
+                device_info=self._get_device_info(),
+            )
+        finally:
+            data_module.teardown()
 
     def _build_data_module(self) -> DaliDataModule:
         """Create the DALI data module."""
@@ -130,7 +134,7 @@ class TransformerTrainingApplication:
             scheduler=scheduler,
             plotter=plotter,
             device=device,
-            batch_processor=PatchBatchProcessor(self.config.patch_size),
+            batch_processor=None,
             mixup_augmentor=MixupAugmentor(self.config.mixup_alpha),
             checkpoint_path=self.config.checkpoint_path,
             patience=self.config.patience,
@@ -147,6 +151,7 @@ class TransformerTrainingApplication:
         )
         vit_model.to(device)
 
+        model = vit_model
         try:
             model = torch.compile(vit_model)
         except Exception as exc:
@@ -165,7 +170,6 @@ class TransformerTrainingApplication:
     def _build_criterion(self) -> nn.Module:
         """Create the training loss."""
         if self.config.use_focal_loss:
-
             return FocalLoss(
                 gamma=self.config.focal_gamma,
                 label_smoothing=self.config.label_smoothing,
@@ -175,11 +179,11 @@ class TransformerTrainingApplication:
 
     def _build_energy_stats(
         self,
-        eml_measurements: dict,
-        gpu_metrics: dict[str, float],
-        cpu_metrics: dict[str, float | bool],
+        eml_measurements: Dict,
+        gpu_metrics: Dict[str, float],
+        cpu_metrics: Dict[str, Union[float, bool]],
         device_key: str,
-    ) -> dict:
+    ) -> Dict:
         """Merge GPU and CPU measurements into one plot-friendly dictionary."""
         energy_stats = dict(eml_measurements)
         energy_stats[device_key] = dict(eml_measurements[device_key])
@@ -192,18 +196,17 @@ class TransformerTrainingApplication:
         energy_stats["rapl_files"] = {"consumed": cpu_metrics["cpu_rapl_files_uj"]}
         return energy_stats
 
-    @staticmethod
-    def _get_device() -> torch.device:
+    def _get_device(self) -> torch.device:
         """Return the device used during training."""
         if not torch.cuda.is_available():
             raise RuntimeError("This script requires CUDA.")
 
-        return torch.device("cuda")
+        torch.cuda.set_device(self.config.device_id)
+        return torch.device(f"cuda:{self.config.device_id}")
 
-    @staticmethod
-    def _get_device_info() -> str:
+    def _get_device_info(self) -> str:
         """Return a human-readable description of the active GPU."""
-        return torch.cuda.get_device_name(0)
+        return torch.cuda.get_device_name(self.config.device_id)
 
 
 def main() -> None:

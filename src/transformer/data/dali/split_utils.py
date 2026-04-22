@@ -114,7 +114,7 @@ class DatasetSplitManager:
         image_paths: t.List[str] = []
         labels: t.List[int] = []
         invalid_files: t.List[t.Tuple[str, str]] = []
-
+        """
         pbar = None
         previous_callback = self.validator.progress_callback
         if self.show_progress and _tqdm is not None:
@@ -133,7 +133,12 @@ class DatasetSplitManager:
         finally:
             self.validator.progress_callback = previous_callback
             if pbar is not None:
-                pbar.close()
+                pbar.close()"""
+        
+        image_paths = [path for path, _ in candidates]
+        labels = [label for _, label in candidates]
+        invalid_files = []
+
 
         if not image_paths:
             raise RuntimeError("No valid images were found for DALI.")

@@ -39,8 +39,8 @@ class DaliDataModule(pl.LightningDataModule):
     def __init__(
         self,
         root_dir: t.Union[str, Path],
-        train_batch_size: int = 256,
-        val_batch_size: int = 256,
+        train_batch_size: int = 128,
+        val_batch_size: int = 128,
         image_size: int = 224,
         num_threads: int = 24,
         device_id: int = 0,

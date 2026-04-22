@@ -39,7 +39,7 @@ class TransformerTrainer:
         scheduler,
         plotter,
         device: torch.device,
-        batch_processor: PatchBatchProcessor,
+        batch_processor: t.Optional[PatchBatchProcessor],
         mixup_augmentor: MixupAugmentor,
         checkpoint_path: t.Union[str, Path],
         patience: int = 25,
@@ -107,6 +107,16 @@ class TransformerTrainer:
             "best_epoch": best_epoch,
         }
 
+    def _prepare_inputs(self, data):
+        """Prepare model inputs and labels from one loader batch."""
+        if self.batch_processor is not None:
+            return self.batch_processor.prepare_batch(data, self.device)
+
+        batch = data[0]
+        images = batch["images"].to(self.device, non_blocking=True)
+        labels = batch["labels"].squeeze(-1).long().to(self.device, non_blocking=True)
+        return images, labels
+
     def _train_one_epoch(self, epoch: int, epochs: int) -> t.Dict[str, float]:
         """Train the model for one epoch."""
         self.model.train()
@@ -115,13 +125,13 @@ class TransformerTrainer:
         train_total = 0
 
         for data in tqdm(self.train_loader, desc=f"Epoch {epoch + 1}/{epochs}", leave=False):
-            patches, labels = self.batch_processor.prepare_batch(data, self.device)
-            patches, y_a, y_b, lam = self.mixup_augmentor.apply(patches, labels)
+            inputs, labels = self._prepare_inputs(data)
+            inputs, y_a, y_b, lam = self.mixup_augmentor.apply(inputs, labels)
 
             self.optimizer.zero_grad(set_to_none=True)
 
             with self._autocast_context():
-                outputs = self.model(patches)
+                outputs = self.model(inputs)
                 if self.mixup_augmentor.enabled:
                     loss = lam * self.criterion(outputs, y_a) + (
                         1.0 - lam
@@ -160,10 +170,10 @@ class TransformerTrainer:
 
         with torch.no_grad():
             for data in self.val_loader:
-                patches, labels = self.batch_processor.prepare_batch(data, self.device)
+                inputs, labels = self._prepare_inputs(data)
 
                 with self._autocast_context():
-                    outputs = self.model(patches)
+                    outputs = self.model(inputs)
                     loss = self.criterion(outputs, labels)
 
                 batch_size = labels.size(0)

@@ -18,13 +18,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-@dataclass(slots=True)
+@dataclass()
 class TransformerTrainingConfig:
     """Store all hyperparameters and paths used during training."""
 
-    root_dir: str = "/home/almeida/Cristobal/Images/dataset2"
-    train_batch_size: int = 1536
-    val_batch_size: int = 1536
+    root_dir: str = "/home/bejeque/nhernang/Cristobal/pytorch_models/assets/dataset"
+    train_batch_size: int = 128
+    val_batch_size: int = 128
     epochs: int = 5
     warmup_epochs: int = 10
     image_size: int = 224
@@ -47,9 +47,9 @@ class TransformerTrainingConfig:
     num_threads: int = 32
     device_id: int = 0
     drop_last: bool = True
-    train_prefetch_queue_depth: int = 10
-    val_prefetch_queue_depth: int = 6
-    eml_gpu_index: int | None = None
+    train_prefetch_queue_depth: int = 2
+    val_prefetch_queue_depth: int = 2
+    eml_gpu_index: int = None
     checkpoint_path: Path = Path("checkpoints/transformer/best_transformer_vitb16.pth")
     figure_path: Path = Path("outputs/figures/transformer/H200/training_curves_ViT-B_16.png")
 

@@ -18,7 +18,7 @@ References:
 """
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
 
@@ -27,12 +27,12 @@ class TrainingPlotter:
     """Store training history and generate summary plots."""
 
     def __init__(self) -> None:
-        self.train_acc: list[float] = []
-        self.val_acc: list[float] = []
-        self.train_loss: list[float] = []
-        self.val_loss: list[float] = []
-        self.best_val_acc: float | None = None
-        self.best_epoch: int | None = None
+        self.train_acc: List[float] = []
+        self.val_acc: List[float] = []
+        self.train_loss: List[float] = []
+        self.val_loss: List[float] = []
+        self.best_val_acc: float = 0.0
+        self.best_epoch: int = 0
 
     def update(
         self,
@@ -54,9 +54,9 @@ class TrainingPlotter:
 
     def plot(
         self,
-        save_path: str | Path | None = "outputs/figures/transformer/training_curves_ViT-B_16.png",
-        energy_stats: dict[str, Any] | None = None,
-        device_info: str | None = None,
+        save_path: str = "outputs/figures/transformer/training_curves_ViT-B_16.png",
+        energy_stats: Optional[Dict[str, Any]] = None,
+        device_info: Optional[str] = None,
     ) -> None:
         """Plot training curves and optionally save them to disk."""
         self._validate_history()
@@ -79,7 +79,7 @@ class TrainingPlotter:
 
         plt.close(fig)
 
-    def _plot_accuracy(self, axis, epochs: list[int]) -> None:
+    def _plot_accuracy(self, axis, epochs: List[int]) -> None:
         """Plot training and validation accuracy."""
         axis.plot(epochs, self.train_acc, label="Train Accuracy")
         axis.plot(epochs, self.val_acc, label="Validation Accuracy")
@@ -107,7 +107,7 @@ class TrainingPlotter:
         axis.set_ylabel("Accuracy")
         axis.legend()
 
-    def _plot_loss(self, axis, epochs: list[int]) -> None:
+    def _plot_loss(self, axis, epochs: List[int]) -> None:
         """Plot training and validation loss."""
         axis.plot(epochs, self.train_loss, label="Train Loss")
         axis.plot(epochs, self.val_loss, label="Validation Loss")
@@ -119,8 +119,8 @@ class TrainingPlotter:
     def _add_energy_text(
         self,
         figure,
-        energy_stats: dict[str, Any],
-        device_info: str | None,
+        energy_stats: Dict[str, Any],
+        device_info: Optional[str],
     ) -> None:
         """Add energy and device information to the figure."""
         gpu_joules, cpu_joules, elapsed_seconds = self._extract_energy_stats(energy_stats)
@@ -145,8 +145,8 @@ class TrainingPlotter:
 
     def _extract_energy_stats(
         self,
-        energy_stats: dict[str, Any],
-    ) -> tuple[float, float, float]:
+        energy_stats: Dict[str, Any],
+    ) -> Tuple[float, float, float]:
         """Extract GPU energy, CPU energy, and elapsed time from the metrics dictionary."""
         measurements = energy_stats.get("meas", {})
         elapsed_seconds = float(energy_stats.get("elapsed", 0.0))
