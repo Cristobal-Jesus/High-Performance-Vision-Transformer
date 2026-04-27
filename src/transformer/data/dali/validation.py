@@ -83,7 +83,7 @@ class DaliImageValidator:
         num_threads: t.Optional[int] = None,
         device_id: t.Optional[int] = None,
         delete_invalid: bool = True,
-        batch_size: int = 1024,
+        batch_size: int = 128,
         progress_callback: t.Optional[t.Callable[[int], None]] = None,
     ) -> None:
         self.supported_formats = set(supported_formats or self.DEFAULT_SUPPORTED_FORMATS)

@@ -54,7 +54,7 @@ class TrainingPlotter:
 
     def plot(
         self,
-        save_path: t.Optional[t.Union[str, Path]] = "outputs/figures/training_curves.png",
+        save_path: t.Optional[t.Union[str, Path]] = "outputs/figures/transformer/V100/training_curves.png",
         energy_stats: t.Optional[t.Dict[str, t.Any]] = None,
         device_info: t.Optional[str] = None,
     ) -> None:

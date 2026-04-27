@@ -26,7 +26,7 @@ class TransformerTrainingConfig:
     root_dir: str = "/home/bejeque/nhernang/Cristobal/pytorch_models/assets/dataset"
     train_batch_size: int = 128
     val_batch_size: int = 128
-    epochs: int = 5
+    epochs: int = 200
     warmup_epochs: int = 10
     image_size: int = 224
     patch_size: int = 16
@@ -51,8 +51,8 @@ class TransformerTrainingConfig:
     train_prefetch_queue_depth: int = 2
     val_prefetch_queue_depth: int = 2
     eml_gpu_index: t.Optional[int] = None
-    checkpoint_path: Path = Path("checkpoints/transformer/best_transformer_vitb16.pth")
-    figure_path: Path = Path("outputs/figures/transformer/H200/training_curves_ViT-B_16.png")
+    checkpoint_path: Path = Path("checkpoints/transformer/best_transformer.pth")
+    figure_path: Path = Path("outputs/figures/transformer/V100/training_curves.png")
 
     @property
     def patch_dim(self) -> int:
