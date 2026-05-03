@@ -134,6 +134,13 @@ class DatasetSplitManager:
             self.validator.progress_callback = previous_callback
             if pbar is not None:
                 pbar.close()
+                
+        
+        """image_paths = [path for path, _ in candidates]
+        labels = [label for _, label in candidates]
+        invalid_files = []"""
+
+        
 
         if not image_paths:
             raise RuntimeError("No valid images were found for DALI.")

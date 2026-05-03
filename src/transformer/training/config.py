@@ -23,7 +23,7 @@ from pathlib import Path
 class TransformerTrainingConfig:
     """Store all hyperparameters and paths used during training."""
 
-    root_dir: str = "/home/bejeque/nhernang/Cristobal/pytorch_models/assets/dataset"
+    root_dir: str = "/var/tmp/nhernang/dataset_256"
     train_batch_size: int = 128
     val_batch_size: int = 128
     epochs: int = 200
@@ -45,11 +45,16 @@ class TransformerTrainingConfig:
     mixup_alpha: float = 0.0
     patience: int = 25
     min_delta: float = 0.0005
+    validate_every: int = 5
+    max_val_batches: t.Optional[int] = None
+    compile_model: bool = True
+    show_progress_bar: bool = False
     num_threads: int = 32
     device_id: int = 0
     drop_last: bool = True
-    train_prefetch_queue_depth: int = 2
+    train_prefetch_queue_depth: int = 3
     val_prefetch_queue_depth: int = 2
+    auto_tune_for_gpu: bool = True
     eml_gpu_index: t.Optional[int] = None
     checkpoint_path: Path = Path("checkpoints/transformer/best_transformer.pth")
     figure_path: Path = Path("outputs/figures/transformer/V100/training_curves.png")

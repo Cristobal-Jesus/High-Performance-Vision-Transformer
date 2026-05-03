@@ -22,11 +22,11 @@ from pathlib import Path
 class TransformerTrainingConfig:
     """Store all hyperparameters and paths used during training."""
 
-    root_dir: str = "/home/bejeque/nhernang/Cristobal/pytorch_models/assets/dataset"
+    root_dir: str = "/var/tmp/nhernang/dataset_256"
     train_batch_size: int = 128
     val_batch_size: int = 128
-    epochs: int = 5
-    warmup_epochs: int = 10
+    epochs: int = 200
+    warmup_epochs: int = 3
     image_size: int = 224
     patch_size: int = 16
     num_classes: int = 20
@@ -34,11 +34,11 @@ class TransformerTrainingConfig:
     depth: int = 12
     num_heads: int = 6
     mlp_ratio: float = 4.0
-    dropout: float = 0.0
-    drop_path_rate: float = 0.05
-    learning_rate: float = 3e-4
-    weight_decay: float = 0.05
-    label_smoothing: float = 0.1
+    dropout: float = 0.1
+    drop_path_rate: float = 0.20
+    learning_rate: float = 1e-5
+    weight_decay: float = 0.1
+    label_smoothing: float = 0.15
     use_focal_loss: bool = False
     focal_gamma: float = 2.0
     mixup_alpha: float = 0.0

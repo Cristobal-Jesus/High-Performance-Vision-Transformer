@@ -50,7 +50,7 @@ class DaliDataModule(pl.LightningDataModule):
         train_prefetch_queue_depth: int = 3,
         val_prefetch_queue_depth: int = 2,
         verbose_invalid: bool = True,
-        delete_invalid_files: bool = False,
+        delete_invalid_files: bool = True,
         pipeline_factory: t.Optional[DaliPipelineFactory] = None,
         validator: t.Optional[DaliImageValidator] = None,
         shard_id: int = 0,
@@ -80,7 +80,7 @@ class DaliDataModule(pl.LightningDataModule):
             num_threads=self.num_threads,
             device_id=self.device_id,
             delete_invalid=self.delete_invalid_files,
-            batch_size=1024,
+            batch_size=128,
         )
         self.split_manager = DatasetSplitManager(
             root_dir=self.root_dir,
