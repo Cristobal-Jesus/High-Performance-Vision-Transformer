@@ -1,4 +1,19 @@
-"""Visualization helpers for model comparison reports."""
+"""
+University of La Laguna
+Higher School of Engineering and Technology
+Bachelor's Degree in Computer Engineering
+Bachelor's Thesis 2025-2026
+
+Title: High-Performance Computing and Machine Learning
+Author: Cristóbal Jesús Sarmiento Rodríguez
+Date: 17th March 2026
+File: visualization.py
+
+Description:
+    This file defines the object responsible for creating table and chart
+    visualizations from PyTorch model metrics.
+"""
+
 
 from __future__ import annotations
 
@@ -32,7 +47,6 @@ class ComparisonVisualizer:
             rows.append(
                 {
                     "Modelo": item.name,
-                    "Tipo": item.model_type,
                     "Accuracy (%)": item.accuracy,
                     "Peso (MB)": round(item.file_size_mb, 2),
                     "Parámetros totales": item.total_parameters,
