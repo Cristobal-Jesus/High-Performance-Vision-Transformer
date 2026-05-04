@@ -26,14 +26,13 @@ from torchvision.models import ResNet50_Weights, resnet50
 
 from transformer.data.dali.datamodule import DaliDataModule
 from transformer.training.losses.focal_loss import FocalLoss
-from transformer.training.batch_processor import PatchBatchProcessor
 from RestNet.training.config import ResNetTrainingConfig
 from transformer.training.energy.cpu_energy_meter import RAPLCPUEnergyMeter
 from transformer.training.energy.gpu_energy_meter import EMLGPUEnergyMeter, SlurmGPUSelector
 from transformer.training.mixup import MixupAugmentor
 from transformer.training.schedulers import SchedulerFactory
 from transformer.training.trainer import TransformerTrainer
-from ViTB16.visualization.training_plotter import TrainingPlotter
+from RestNet.visualization.training_plotter import TrainingPlotter
 
 
 torch.backends.cuda.matmul.allow_tf32 = True

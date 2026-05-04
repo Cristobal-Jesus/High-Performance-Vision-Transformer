@@ -20,7 +20,7 @@ from tests.transformer.test_transformer import Evaluator
 # Configuration
 # ---------------------------------------------------------------------------
 
-CHECKPOINT_PATH = "checkpoints/transformer/best_transformer.pth"
+CHECKPOINT_PATH = "checkpoints/transformer/best_transformer_vitb16.pth"
 IMAGES_DIR = "/home/bejeque/nhernang/Cristobal/pytorch_models/assets/Test"
 
 
@@ -33,7 +33,7 @@ def main() -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    evaluator = Evaluator(checkpoint_path=CHECKPOINT_PATH, device=device)
+    evaluator = Evaluator(checkpoint_path=CHECKPOINT_PATH, device=device, scratch=False)
     print("Model loaded.")
 
     total_params, size_mb = evaluator.model_stats()

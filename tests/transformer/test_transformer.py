@@ -21,6 +21,8 @@ import typing as t
 from pathlib import Path
 
 import torch
+import torch.nn as nn
+from torchvision.models import ViT_B_16_Weights, vit_b_16
 from tqdm import tqdm
 
 from src.transformer.training.batch_processor import PatchBatchProcessor
@@ -64,18 +66,7 @@ LABEL_MAP: t.Dict[str, int] = {name: idx for idx, name in enumerate(CLASS_NAMES)
 # ---------------------------------------------------------------------------
 
 class Evaluator:
-    """Loads a trained model and evaluates it over a directory of images.
-
-    Images are first validated with NVIDIA DALI. Only valid images are
-    fed to the evaluation pipeline. Batches are patchified by
-    PatchBatchProcessor before being passed to the model.
-
-    Attributes:
-        device: The torch device used for inference.
-        model: The loaded model in evaluation mode.
-        validator: A DaliImageValidator instance used to pre-filter images.
-        processor: A PatchBatchProcessor that converts images to patches.
-    """
+    """Loads a trained model and evaluates it over a directory of images."""
 
     def __init__(
         self,
@@ -83,21 +74,13 @@ class Evaluator:
         device: t.Optional[torch.device] = None,
         validator: t.Optional[DaliImageValidator] = None,
         patch_size: int = 16,
+        scratch: bool = None,                          # Fix: None → False
     ) -> None:
-        """Initialises the Evaluator.
-
-        Args:
-            checkpoint_path: Path to the model checkpoint (.pth file).
-            device: Torch device to use. Defaults to CUDA if available,
-                otherwise CPU.
-            validator: A DaliImageValidator instance. If None, a default
-                one is created with delete_invalid=True.
-            patch_size: Patch size passed to PatchBatchProcessor.
-        """
         self.device = device or torch.device(
             "cuda" if torch.cuda.is_available() else "cpu"
         )
-        self.model = self._load_model(checkpoint_path)
+        self.scratch = scratch                          # Fix 4: guardar como atributo
+        self.model = self._load_model(checkpoint_path, scratch)
         self.validator = validator or DaliImageValidator(delete_invalid=True)
         self.processor = PatchBatchProcessor(patch_size=patch_size)
 
@@ -105,19 +88,32 @@ class Evaluator:
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _load_model(self, checkpoint_path: str) -> VisionTransformer:
-        """Loads model weights from a checkpoint file.
+    def _load_model(self, checkpoint_path: str, scratch: bool) -> nn.Module:
+        if scratch:
+            model = VisionTransformer().to(self.device)
+            state_dict = torch.load(checkpoint_path, map_location=self.device)
+            model.load_state_dict(state_dict)
+            model.eval()
+            return model
 
-        Args:
-            checkpoint_path: Path to the .pth checkpoint.
+        vit_model = vit_b_16(weights=None)              # No hace falta cargar ImageNet si cargamos checkpoint
+        vit_model.heads.head = nn.Linear(
+            vit_model.heads.head.in_features,
+            len(CLASS_NAMES),                           # Fix 1: era self.config.num_classes
+        )
 
-        Returns:
-            The model in evaluation mode, moved to self.device.
-        """
-        model = VisionTransformer().to(self.device)
         state_dict = torch.load(checkpoint_path, map_location=self.device)
-        model.load_state_dict(state_dict)
-        model.eval()
+        vit_model.load_state_dict(state_dict)           # Fix 2: checkpoint nunca se cargaba
+
+        vit_model.to(self.device)
+
+        model = vit_model
+        try:
+            model = torch.compile(vit_model)
+        except Exception as exc:
+            print(f"[torch.compile] Disabled: {exc}")
+
+        model.eval()                                    # Fix 3: faltaba eval()
         return model
 
     @staticmethod
@@ -125,22 +121,6 @@ class Evaluator:
         filename: str,
         label_map: t.Dict[str, int] = LABEL_MAP,
     ) -> int:
-        """Infers the integer label from an image filename.
-
-        Filenames are expected to follow the pattern
-        ``<ClassName>_<index>.<ext>``, e.g. ``Bee_003.jpg``.
-
-        Args:
-            filename: The bare filename (no directory component).
-            label_map: Mapping from class name string to integer label.
-
-        Returns:
-            The integer label corresponding to the class encoded in
-            the filename.
-
-        Raises:
-            ValueError: If the class name cannot be found in label_map.
-        """
         stem = os.path.splitext(filename)[0]
         class_name = "_".join(stem.split("_")[:-1])
 
@@ -156,15 +136,6 @@ class Evaluator:
         self,
         images_dir: str,
     ) -> t.Tuple[t.List[str], t.List[int]]:
-        """Scans a directory, validates images with DALI, and collects paths.
-
-        Args:
-            images_dir: Directory containing the image files.
-
-        Returns:
-            A tuple (image_paths, labels) containing only entries for
-            images that passed DALI validation.
-        """
         supported_extensions = (".jpg", ".jpeg", ".png")
         candidate_paths = [
             os.path.join(images_dir, fname)
@@ -203,11 +174,6 @@ class Evaluator:
     # ------------------------------------------------------------------
 
     def model_stats(self) -> t.Tuple[int, float]:
-        """Returns the total parameter count and model size in megabytes.
-
-        Returns:
-            A tuple (total_params, size_mb).
-        """
         total_params = 0
         total_bytes = 0
 
@@ -224,24 +190,7 @@ class Evaluator:
         images_dir: str,
         batch_size: int = 128,
         num_threads: int = 4,
-        ) -> float:
-        """Evaluates the model accuracy over images in a directory.
-
-        Only images that pass DALI validation are included. Each batch
-        is patchified by PatchBatchProcessor before being passed to the
-        model.
-
-        Args:
-            images_dir: Path to the directory containing test images.
-            batch_size: Number of samples per inference batch.
-            num_threads: CPU threads used by the DALI pipeline.
-
-        Returns:
-            Top-1 accuracy as a percentage (0-100).
-
-        Raises:
-            RuntimeError: If no valid images are found after validation.
-        """
+    ) -> float:
         print("Validating images with DALI...")
         image_paths, labels = self._collect_valid_images(images_dir)
 
@@ -276,9 +225,15 @@ class Evaluator:
 
         with torch.no_grad():
             for data in tqdm(loader, desc="Inference", unit="batch"):
-                patches, targets = self.processor.prepare_batch(data, self.device)
+                # Fix 4: cada modelo espera un formato de entrada diferente
+                if self.scratch:
+                    inputs, targets = self.processor.prepare_batch(data, self.device)
+                else:
+                    batch = data[0]
+                    inputs = batch["images"].to(self.device, non_blocking=True)
+                    targets = batch["labels"].squeeze(-1).long().to(self.device, non_blocking=True)
 
-                outputs = self.model(patches)
+                outputs = self.model(inputs)
                 preds = outputs.argmax(dim=1)
                 correct += (preds == targets).sum().item()
                 total += targets.size(0)

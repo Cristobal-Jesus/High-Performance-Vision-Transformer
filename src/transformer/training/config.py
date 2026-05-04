@@ -24,8 +24,8 @@ class TransformerTrainingConfig:
     """Store all hyperparameters and paths used during training."""
 
     root_dir: str = "/var/tmp/nhernang/dataset_256"
-    train_batch_size: int = 128
-    val_batch_size: int = 128
+    train_batch_size: int = 192
+    val_batch_size: int = 192
     epochs: int = 200
     warmup_epochs: int = 10
     image_size: int = 224
@@ -35,11 +35,11 @@ class TransformerTrainingConfig:
     depth: int = 12
     num_heads: int = 6
     mlp_ratio: float = 4.0
-    dropout: float = 0.0
-    drop_path_rate: float = 0.05
+    dropout: float = 0.1
+    drop_path_rate: float = 0.20
     learning_rate: float = 3e-4
-    weight_decay: float = 0.05
-    label_smoothing: float = 0.1
+    weight_decay: float = 0.10 
+    label_smoothing: float = 0.15
     use_focal_loss: bool = False
     focal_gamma: float = 2.0
     mixup_alpha: float = 0.0
@@ -52,7 +52,7 @@ class TransformerTrainingConfig:
     num_threads: int = 32
     device_id: int = 0
     drop_last: bool = True
-    train_prefetch_queue_depth: int = 3
+    train_prefetch_queue_depth: int = 4
     val_prefetch_queue_depth: int = 2
     auto_tune_for_gpu: bool = True
     eml_gpu_index: t.Optional[int] = None
