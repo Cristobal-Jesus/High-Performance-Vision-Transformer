@@ -1,0 +1,4 @@
+Modelo,Tipo,Accuracy (%),Peso (MB),Parámetros totales,Tensores,Dtypes
+Transformer propio,Transformer,87.41,82.74,21674900,154,float32 (154)
+ViT-B/16 preentrenado,Transformer preentrenado,91.15,327.41,85814036,152,float32 (152)
+ResNet50 preentrenada,CNN preentrenada,91.41,90.14,23602185,320,"float32 (267), int64 (53)"
