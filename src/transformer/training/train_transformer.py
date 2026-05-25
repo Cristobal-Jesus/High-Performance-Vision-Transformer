@@ -32,11 +32,8 @@ from transformer.training.mixup import MixupAugmentor
 from transformer.training.schedulers import SchedulerFactory
 from transformer.training.trainer import TransformerTrainer
 from transformer.visualization.training_plotter import TrainingPlotter
-
-
-torch.backends.cuda.matmul.allow_tf32 = True
-torch.backends.cudnn.allow_tf32 = True
-torch.backends.cudnn.benchmark = True
+from transformer.data.dali.pipelines import DaliPipelineFactory
+import nvidia.dali.types as types
 
 
 class TransformerTrainingApplication:
@@ -47,6 +44,12 @@ class TransformerTrainingApplication:
 
     def run(self) -> None:
         """Execute the training workflow."""
+        if self.config.allow_tf32:
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+        if self.config.cudnn_benchmark:
+            torch.backends.cudnn.benchmark = True
+    
         device = self._get_device()
         data_module = self._build_data_module()
         data_module.setup()
@@ -101,15 +104,11 @@ class TransformerTrainingApplication:
             drop_last=self.config.drop_last,
             train_prefetch_queue_depth=self.config.train_prefetch_queue_depth,
             val_prefetch_queue_depth=self.config.val_prefetch_queue_depth,
+            validator_batch_size=self.config.validator_batch_size,
+            pipeline_factory=self._build_pipeline_factory(),
         )
 
-    def _build_trainer(
-        self,
-        device: torch.device,
-        train_loader,
-        val_loader,
-    ) -> TransformerTrainer:
-        """Create the trainer object used for the fit loop."""
+    def _build_trainer(self, device, train_loader, val_loader) -> TransformerTrainer:
         model = self._build_model(device)
         optimizer = self._build_optimizer(model)
         criterion = self._build_criterion()
@@ -132,8 +131,13 @@ class TransformerTrainingApplication:
             batch_processor=PatchBatchProcessor(self.config.patch_size),
             mixup_augmentor=MixupAugmentor(self.config.mixup_alpha),
             checkpoint_path=self.config.checkpoint_path,
+            gpu_profile=self.config._gpu_profile,      # ← antes faltaba
             patience=self.config.patience,
             min_delta=self.config.min_delta,
+            validate_every=self.config.validate_every,  # ← antes faltaba
+            max_val_batches=self.config.max_val_batches, # ← antes faltaba
+            show_progress_bar=self.config.show_progress_bar, # ← antes faltaba
+            grad_clip_norm=self.config.grad_clip_norm,  # ← nuevo
         )
 
     def _build_model(self, device: torch.device) -> nn.Module:
@@ -151,11 +155,13 @@ class TransformerTrainingApplication:
             use_patch_norm=True,
         ).to(device)
 
-        try:
-            model = torch.compile(model)
-        except Exception as exc:
-            print(f"[torch.compile] Disabled: {exc}")
-
+        if self.config.compile_model:
+            profile = self.config._gpu_profile
+            compile_mode = profile.compile_mode if profile else "default"
+            try:
+                model = torch.compile(model, mode=compile_mode)
+            except Exception as exc:
+                print(f"[torch.compile] Disabled ({compile_mode}): {exc}")
         return model
 
     def _build_optimizer(self, model: nn.Module) -> optim.Optimizer:
@@ -194,19 +200,33 @@ class TransformerTrainingApplication:
         energy_stats["cpu_rapl_available"] = cpu_metrics["cpu_rapl_available"]
         energy_stats["rapl_files"] = {"consumed": cpu_metrics["cpu_rapl_files_uj"]}
         return energy_stats
+    
+    def _build_pipeline_factory(self) -> DaliPipelineFactory:
+        
+        dtype_map = {"bf16": types.BFLOAT16, "fp16": types.FLOAT16}
+        output_dtype = dtype_map.get(self.config.dali_output_dtype, types.FLOAT16)
+
+        return DaliPipelineFactory(
+            output_dtype=output_dtype,
+            hw_decoder_load=self.config.dali_hw_decoder_load,
+            device_memory_padding=self.config.dali_device_memory_padding,
+            host_memory_padding=self.config.dali_host_memory_padding,
+            preallocate_width_hint=self.config.dali_preallocate_width_hint,
+            preallocate_height_hint=self.config.dali_preallocate_height_hint,
+            decoder_cache_size=self.config.dali_decoder_cache_size,
+            decoder_cache_threshold=0,
+            reader_prefetch_queue_depth=self.config.train_prefetch_queue_depth,
+        )
 
     @staticmethod
-    def _get_device() -> torch.device:
-        """Return the device used during training."""
+    def _get_device(self) -> torch.device:
         if not torch.cuda.is_available():
             raise RuntimeError("This script requires CUDA.")
-
-        return torch.device("cuda")
+        return torch.device("cuda", self.config.device_id)
 
     @staticmethod
-    def _get_device_info() -> str:
-        """Return a human-readable description of the active GPU."""
-        return torch.cuda.get_device_name(0)
+    def _get_device_info(self) -> str:
+        return torch.cuda.get_device_name(self.config.device_id) 
 
 
 def main() -> None:

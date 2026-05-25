@@ -56,6 +56,7 @@ class DaliDataModule(pl.LightningDataModule):
         shard_id: int = 0,
         num_shards: int = 1,
         show_progress: bool = True,
+        validator_batch_size: int = 128,
     ) -> None:
         super().__init__()
 
@@ -80,7 +81,7 @@ class DaliDataModule(pl.LightningDataModule):
             num_threads=self.num_threads,
             device_id=self.device_id,
             delete_invalid=self.delete_invalid_files,
-            batch_size=128,
+            batch_size=self.validator_batch_size,
         )
         self.split_manager = DatasetSplitManager(
             root_dir=self.root_dir,

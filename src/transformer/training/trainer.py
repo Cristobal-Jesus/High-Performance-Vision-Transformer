@@ -50,6 +50,8 @@ class TransformerTrainer:
         validate_every: int = 1,
         max_val_batches: t.Optional[int] = None,
         show_progress_bar: bool = True,
+        grad_clip_norm: float = 1.0,
+        config: TransformerTrainingConfig
     ) -> None:
         self.model = model
         self.train_loader = train_loader
@@ -70,7 +72,7 @@ class TransformerTrainer:
             raise ValueError("max_val_batches must be greater than 0 or None.")
         self.max_val_batches = max_val_batches
         self.show_progress_bar = show_progress_bar
-
+        self.grad_clip_norm = grad_clip_norm
         self.checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
 
         self._amp_dtype = self._select_amp_dtype()
@@ -81,6 +83,7 @@ class TransformerTrainer:
             and self.device.type == "cuda"
         )
         self._scaler = torch.cuda.amp.GradScaler() if use_scaler else None
+        self.config = config
 
     def _select_amp_dtype(self) -> t.Optional[torch.dtype]:
         if self.device.type != "cuda":
@@ -190,12 +193,12 @@ class TransformerTrainer:
             if self._scaler is not None:
                 self._scaler.scale(loss).backward()
                 self._scaler.unscale_(self.optimizer)
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.grad_clip_norm)
                 self._scaler.step(self.optimizer)
                 self._scaler.update()
             else:
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.grad_clip_norm)
                 self.optimizer.step()
 
             batch_size = labels.size(0)
@@ -291,7 +294,8 @@ class TransformerTrainer:
         )
 
     def _autocast_context(self):
-        """Return the autocast context used during forward passes."""
-        if self._amp_dtype is None:
-            return nullcontext()
-        return torch.amp.autocast(device_type="cuda", dtype=self._amp_dtype)
+        if self.device.type == "cuda":
+            dtype_map = {"fp16": torch.float16, "bf16": torch.bfloat16}
+            dtype = dtype_map.get(self.config.amp_dtype, torch.float32)
+            return torch.cuda.amp.autocast(dtype=dtype)
+        return nullcontext()
