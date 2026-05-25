@@ -5,3 +5,12 @@ __pycache__/
 *.pkl
 *.h5
 *.pth
+*.err
+*.log
+*.out
+*.csv
+*.json
+*.zip
+*.tar.gz
+*.tar
+checkpoints/

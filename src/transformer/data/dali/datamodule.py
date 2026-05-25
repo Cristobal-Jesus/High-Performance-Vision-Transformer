@@ -76,6 +76,7 @@ class DaliDataModule(pl.LightningDataModule):
         self.shard_id = shard_id
         self.num_shards = num_shards
         self.show_progress = show_progress
+        self.validator_batch_size = validator_batch_size
 
         self.validator = validator or DaliImageValidator(
             num_threads=self.num_threads,

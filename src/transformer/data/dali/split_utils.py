@@ -26,11 +26,6 @@ from pathlib import Path
 
 from .validation import DaliImageValidator
 
-try:
-    from tqdm.auto import tqdm as _tqdm
-except ImportError:
-    _tqdm = None
-
 
 class DatasetSplitManager:
     """Scan the dataset, split the samples, and generate DALI file lists."""
@@ -82,7 +77,12 @@ class DatasetSplitManager:
     def _scan_dataset(
         self,
     ) -> t.Tuple[t.List[str], t.List[int], t.Dict[str, int], t.List[t.Tuple[str, str]]]:
-        """Scan the dataset root directory and collect valid image paths and labels."""
+        """Scan the dataset root directory and collect image paths and labels.
+
+        Image validation via DALI is intentionally skipped: the dataset is
+        assumed to be clean.  Any corrupted files will raise an error when
+        the training pipeline first tries to decode them.
+        """
         if not self.root_dir.is_dir():
             raise FileNotFoundError(f"Dataset directory does not exist: {self.root_dir}")
 
@@ -97,55 +97,21 @@ class DatasetSplitManager:
 
         label_map = {entry.name: index for index, entry in enumerate(class_entries)}
 
-        candidates: t.List[t.Tuple[str, int]] = []
+        image_paths: t.List[str] = []
+        labels: t.List[int] = []
 
         for class_entry in class_entries:
             label = label_map[class_entry.name]
             with os.scandir(class_entry.path) as it:
                 for entry in it:
                     if entry.is_file(follow_symlinks=False):
-                        candidates.append((entry.path, label))
-
-        if not candidates:
-            raise RuntimeError("No image files were found in the dataset root.")
-
-        path_to_label = dict(candidates)
-
-        image_paths: t.List[str] = []
-        labels: t.List[int] = []
-        invalid_files: t.List[t.Tuple[str, str]] = []
-        
-        pbar = None
-        previous_callback = self.validator.progress_callback
-        if self.show_progress and _tqdm is not None:
-            pbar = _tqdm(total=len(candidates), desc="Validating", unit="img")
-            self.validator.progress_callback = pbar.update
-
-        try:
-            for path, (is_valid, info) in self.validator.validate_many(
-                candidate_path for candidate_path, _ in candidates
-            ):
-                if is_valid:
-                    image_paths.append(path)
-                    labels.append(path_to_label[path])
-                else:
-                    invalid_files.append((path, info))
-        finally:
-            self.validator.progress_callback = previous_callback
-            if pbar is not None:
-                pbar.close()
-                
-        
-        """image_paths = [path for path, _ in candidates]
-        labels = [label for _, label in candidates]
-        invalid_files = []"""
-
-        
+                        image_paths.append(entry.path)
+                        labels.append(label)
 
         if not image_paths:
-            raise RuntimeError("No valid images were found for DALI.")
+            raise RuntimeError("No image files were found in the dataset root.")
 
-        return image_paths, labels, label_map, invalid_files
+        return image_paths, labels, label_map, []
 
     def _split_samples(
         self,

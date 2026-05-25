@@ -43,6 +43,7 @@ class DaliPipelineFactory:
         erasing_aspect_ratio_range: t.Tuple[float, float] = (0.3, 3.3),
         decoder_cache_size: int = 0,
         decoder_cache_threshold: int = 0,
+        train_decoder_cache_size: int = 0,
         hw_decoder_load: float = 0.9,
         device_memory_padding: int = 211_025_920,
         host_memory_padding: int = 140_544_000,
@@ -68,6 +69,7 @@ class DaliPipelineFactory:
 
         self.decoder_cache_size = decoder_cache_size
         self.decoder_cache_threshold = decoder_cache_threshold
+        self.train_decoder_cache_size = train_decoder_cache_size
         self.hw_decoder_load = hw_decoder_load
         self.device_memory_padding = device_memory_padding
         self.host_memory_padding = host_memory_padding
@@ -110,6 +112,8 @@ class DaliPipelineFactory:
         reader_prefetch_queue_depth = self.reader_prefetch_queue_depth
         output_dtype = self.output_dtype
         read_ahead = self.read_ahead
+        train_decoder_cache_size = self.train_decoder_cache_size
+        decoder_cache_threshold = self.decoder_cache_threshold
 
         @pipeline_def(enable_conditionals=True)
         def pipeline(file_list: str, crop: int = 224):
@@ -120,28 +124,54 @@ class DaliPipelineFactory:
                 stick_to_shard=True,
                 read_ahead=read_ahead,
                 prefetch_queue_depth=reader_prefetch_queue_depth,
-                skip_cached_images=False,
+                skip_cached_images=train_decoder_cache_size > 0,
             )
 
-            images = fn.decoders.image_random_crop(
-                images,
-                device="mixed",
-                output_type=types.RGB,
-                random_area=(0.8, 1.0),
-                random_aspect_ratio=(0.75, 1.33),
-                hw_decoder_load=hw_decoder_load,
-                device_memory_padding=device_memory_padding,
-                host_memory_padding=host_memory_padding,
-                preallocate_width_hint=preallocate_width_hint,
-                preallocate_height_hint=preallocate_height_hint,
-            )
-
-            images = fn.resize(
-                images,
-                device="gpu",
-                resize_x=crop,
-                resize_y=crop,
-            )
+            if train_decoder_cache_size > 0:
+                # Caché activo: decodifica la imagen completa (cacheable) y
+                # aplica el crop aleatorio como op separada en GPU.
+                # A partir de la época 2 el disco queda inactivo.
+                decoder_kwargs = dict(
+                    device="mixed",
+                    output_type=types.RGB,
+                    hw_decoder_load=hw_decoder_load,
+                    device_memory_padding=device_memory_padding,
+                    host_memory_padding=host_memory_padding,
+                    preallocate_width_hint=preallocate_width_hint,
+                    preallocate_height_hint=preallocate_height_hint,
+                    cache_size=train_decoder_cache_size,
+                    cache_type="threshold",
+                    cache_threshold=decoder_cache_threshold,
+                )
+                images = fn.decoders.image(images, **decoder_kwargs)
+                images = fn.random_resized_crop(
+                    images,
+                    device="gpu",
+                    size=[crop, crop],
+                    random_area=[0.8, 1.0],
+                    random_aspect_ratio=[0.75, 1.33],
+                )
+            else:
+                # Sin caché: decoder fusionado con el crop (más eficiente
+                # porque el JPEG solo decodifica los píxeles del crop).
+                images = fn.decoders.image_random_crop(
+                    images,
+                    device="mixed",
+                    output_type=types.RGB,
+                    random_area=(0.8, 1.0),
+                    random_aspect_ratio=(0.75, 1.33),
+                    hw_decoder_load=hw_decoder_load,
+                    device_memory_padding=device_memory_padding,
+                    host_memory_padding=host_memory_padding,
+                    preallocate_width_hint=preallocate_width_hint,
+                    preallocate_height_hint=preallocate_height_hint,
+                )
+                images = fn.resize(
+                    images,
+                    device="gpu",
+                    resize_x=crop,
+                    resize_y=crop,
+                )
 
             brightness = fn.random.uniform(range=brightness_range)
             contrast = fn.random.uniform(range=contrast_range)
@@ -223,7 +253,18 @@ class DaliPipelineFactory:
         mean = self.mean
         std = self.std
 
-        decoder_cache_size = self.decoder_cache_size
+        # La caché de imágenes DALI es un singleton por device: solo puede
+        # inicializarse una vez.  Cuando el pipeline de entrenamiento ya la
+        # reclamó (train_decoder_cache_size > 0), el pipeline de validación
+        # no debe intentar usarla — DALI compara TODOS los parámetros internos
+        # y lanza "already initialized with other parameters" si difieren.
+        # La validación corre como máximo cada 5 épocas (~40 veces en 200
+        # épocas), así que leer val desde disco no es un cuello de botella.
+        decoder_cache_size = (
+            0
+            if self.train_decoder_cache_size > 0
+            else self.decoder_cache_size
+        )
         decoder_cache_threshold = self.decoder_cache_threshold
         hw_decoder_load = self.hw_decoder_load
         device_memory_padding = self.device_memory_padding
@@ -257,6 +298,7 @@ class DaliPipelineFactory:
             )
             if decoder_cache_size > 0:
                 decoder_kwargs["cache_size"] = decoder_cache_size
+                decoder_kwargs["cache_type"] = "threshold"
                 decoder_kwargs["cache_threshold"] = decoder_cache_threshold
 
             images = fn.decoders.image(images, **decoder_kwargs)

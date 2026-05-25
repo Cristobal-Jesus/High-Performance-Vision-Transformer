@@ -202,8 +202,14 @@ class TransformerTrainingApplication:
         return energy_stats
     
     def _build_pipeline_factory(self) -> DaliPipelineFactory:
-        
-        dtype_map = {"bf16": types.BFLOAT16, "fp16": types.FLOAT16}
+        # BFLOAT16 en DALI requiere >= 1.14. Si no está, usamos FLOAT16 y
+        # dejamos que el autocast de PyTorch haga la conversión a BF16.
+        bf16_dtype = getattr(types, "BFLOAT16", types.FLOAT16)
+
+        dtype_map = {
+            "bf16": bf16_dtype,
+            "fp16": types.FLOAT16,
+        }
         output_dtype = dtype_map.get(self.config.dali_output_dtype, types.FLOAT16)
 
         return DaliPipelineFactory(
@@ -215,16 +221,15 @@ class TransformerTrainingApplication:
             preallocate_height_hint=self.config.dali_preallocate_height_hint,
             decoder_cache_size=self.config.dali_decoder_cache_size,
             decoder_cache_threshold=0,
+            train_decoder_cache_size=self.config.dali_train_decoder_cache_size,
             reader_prefetch_queue_depth=self.config.train_prefetch_queue_depth,
         )
 
-    @staticmethod
     def _get_device(self) -> torch.device:
         if not torch.cuda.is_available():
             raise RuntimeError("This script requires CUDA.")
         return torch.device("cuda", self.config.device_id)
 
-    @staticmethod
     def _get_device_info(self) -> str:
         return torch.cuda.get_device_name(self.config.device_id) 
 

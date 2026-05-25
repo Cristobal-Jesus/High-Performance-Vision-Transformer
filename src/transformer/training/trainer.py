@@ -26,6 +26,7 @@ from tqdm import tqdm
 from .batch_processor import PatchBatchProcessor
 from .hardware import GpuProfile
 from .mixup import MixupAugmentor
+from .config import TransformerTrainingConfig 
 
 
 class TransformerTrainer:
@@ -51,7 +52,7 @@ class TransformerTrainer:
         max_val_batches: t.Optional[int] = None,
         show_progress_bar: bool = True,
         grad_clip_norm: float = 1.0,
-        config: TransformerTrainingConfig
+        config: TransformerTrainingConfig = None,
     ) -> None:
         self.model = model
         self.train_loader = train_loader
@@ -170,7 +171,7 @@ class TransformerTrainer:
         progress = tqdm(
             self.train_loader,
             desc=f"Epoch {epoch + 1}/{epochs}",
-            leave=False,
+            leave=True,
             disable=not self.show_progress_bar,
         )
 
@@ -294,8 +295,7 @@ class TransformerTrainer:
         )
 
     def _autocast_context(self):
-        if self.device.type == "cuda":
-            dtype_map = {"fp16": torch.float16, "bf16": torch.bfloat16}
-            dtype = dtype_map.get(self.config.amp_dtype, torch.float32)
-            return torch.cuda.amp.autocast(dtype=dtype)
-        return nullcontext()
+        """Return the autocast context used during forward passes."""
+        if self._amp_dtype is None:
+            return nullcontext()
+        return torch.amp.autocast(device_type="cuda", dtype=self._amp_dtype)

@@ -49,7 +49,7 @@ class TransformerTrainingConfig:
     warmup_epochs: int = 10
     patience: int = 25
     min_delta: float = 0.0005
-    validate_every: int = 5
+    validate_every: int = 1
     max_val_batches: t.Optional[int] = None
 
     # --- DALI (None → se rellenan desde GpuProfile) ---
@@ -57,7 +57,7 @@ class TransformerTrainingConfig:
     device_id: int = 0
     drop_last: bool = True
     train_prefetch_queue_depth: t.Optional[int] = None
-    val_prefetch_queue_depth: int = 2
+    val_prefetch_queue_depth: int = 4
     validator_batch_size: int = 128           # NUEVO
     dali_output_dtype: t.Optional[str] = None          # "fp16" | "bf16"
     dali_hw_decoder_load: t.Optional[float] = None
@@ -66,6 +66,7 @@ class TransformerTrainingConfig:
     dali_preallocate_width_hint: t.Optional[int] = None
     dali_preallocate_height_hint: t.Optional[int] = None
     dali_decoder_cache_size: t.Optional[int] = None    # MB; 0 = desactivado
+    dali_train_decoder_cache_size: t.Optional[int] = None
 
     # --- hardware / backends ---
     auto_tune_for_gpu: bool = True
@@ -75,7 +76,7 @@ class TransformerTrainingConfig:
     eml_gpu_index: t.Optional[int] = None
 
     # --- misc ---
-    show_progress_bar: bool = False
+    show_progress_bar: bool = True
 
     # campo no-init: perfil detectado
     _gpu_profile: t.Optional[GpuProfile] = field(
@@ -102,11 +103,11 @@ class TransformerTrainingConfig:
         folder = profile.output_folder if profile else "CPU"
 
         self.root_dir = _resolve(self.root_dir, "root_dir",
-                                 "/home/bejeque/nhernang/Cristobal/dataset_256")
+                                 "/home/almeida/Cristobal/Images/dataset_256")
 
         if self.checkpoint_path is None:
             self.checkpoint_path = Path(
-                f"checkpoints/transformer/{folder}/best_transformer.pth"
+                f"checkpoints/transformer/best_transformer.pth"
             )
         if self.figure_path is None:
             self.figure_path = Path(
@@ -135,7 +136,9 @@ class TransformerTrainingConfig:
             self.dali_preallocate_height_hint, "dali_preallocate_height_hint", 256)
         self.dali_decoder_cache_size = _resolve(
             self.dali_decoder_cache_size, "dali_decoder_cache_size", 0)
-
+        self.dali_train_decoder_cache_size = _resolve(
+            self.dali_train_decoder_cache_size, "dali_train_decoder_cache_size", 0)
+        
     @property
     def patch_dim(self) -> int:
         return self.patch_size * self.patch_size * 3
