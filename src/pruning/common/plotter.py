@@ -6,13 +6,12 @@ Bachelor's Thesis 2025-2026
 
 Title: High-Performance Computing and Machine Learning
 Author: Cristóbal Jesús Sarmiento Rodríguez
-Date: 17th March 2026
-File: plotter.py
+File: pruning/common/plotter.py
 
 Description:
-    Plotting class that generates a two-panel bar chart comparing
-    top-1 accuracy and model size across the FP32, FP16 and BF16
-    precision variants.
+    Visualización comparativa de resultados de pruning.
+    Genera un gráfico de dos paneles: accuracy y tamaño de modelo,
+    comparando el modelo original con las variantes podadas.
 
 References:
     - https://matplotlib.org/stable/
@@ -21,42 +20,40 @@ References:
 from __future__ import annotations
 
 from pathlib import Path
+from typing import List
 
 import matplotlib.pyplot as plt
 
-from .precision_stats import PrecisionStats
+from .stats import PruningStats
 
-_BAR_COLORS: list[str] = ["#4C72B0", "#DD8452", "#55A868"]
+_BAR_COLORS: list[str] = ["#4C72B0", "#DD8452", "#55A868", "#C44E52", "#8172B2"]
 
 
-class ComparisonPlotter:
-    """Generate a side-by-side comparison figure for precision benchmarks."""
+class PruningPlotter:
+    """Genera una figura comparativa para experimentos de pruning."""
 
     def plot(
         self,
-        stats: list[PrecisionStats],
+        stats: List[PruningStats],
         output_path: str | Path,
+        title: str = "Pruning Comparison",
     ) -> None:
-        """Save a two-panel bar chart to *output_path*.
+        """Guarda una figura de dos paneles en *output_path*.
 
-        The two panels show:
-          1. Top-1 accuracy (%)
-          2. Model size (MB)
+        Panel 1: Top-1 accuracy (%).
+        Panel 2: Tamaño del modelo en MB (parámetros totales × 4 bytes).
 
         Args:
-            stats: One ``PrecisionStats`` per dtype variant, in display order.
-            output_path: Destination path for the saved figure (PNG).
+            stats:       Lista de :class:`PruningStats`, una por variante.
+            output_path: Ruta de destino para la figura PNG.
+            title:       Título de la figura.
         """
         labels = [s.label for s in stats]
         accuracy = [s.accuracy for s in stats]
         size_mb = [s.size_mb for s in stats]
 
         fig, axes = plt.subplots(1, 2, figsize=(10, 5))
-        fig.suptitle(
-            "Precision Comparison: FP32 vs FP16 vs BF16",
-            fontsize=14,
-            fontweight="bold",
-        )
+        fig.suptitle(title, fontsize=14, fontweight="bold")
 
         self._bar(axes[0], labels, accuracy, "Top-1 Accuracy (%)")
         self._bar(axes[1], labels, size_mb, "Model Size (MB)")
@@ -68,7 +65,7 @@ class ComparisonPlotter:
         fig.savefig(output_path, dpi=150, bbox_inches="tight")
         plt.close(fig)
 
-        print(f"Figure saved to {output_path}")
+        print(f"[plotter] Figura guardada en {output_path}")
 
     @staticmethod
     def _bar(
@@ -77,8 +74,9 @@ class ComparisonPlotter:
         values: list[float],
         ylabel: str,
     ) -> None:
-        """Draw a single annotated bar chart panel."""
-        bars = ax.bar(labels, values, color=_BAR_COLORS[: len(labels)], width=0.5)
+        """Dibuja un panel de barras anotado."""
+        colors = _BAR_COLORS[: len(labels)]
+        bars = ax.bar(labels, values, color=colors, width=0.5)
         ax.set_ylabel(ylabel)
         ax.set_ylim(0, max(values) * 1.25)
 

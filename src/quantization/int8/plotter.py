@@ -10,9 +10,9 @@ Date: 17th March 2026
 File: plotter.py
 
 Description:
-    Plotting class that generates a three-panel bar chart comparing
-    accuracy, disk size and inference time between the FP32 baseline
-    and the INT8 dynamically quantized model.
+    Plotting class that generates a two-panel bar chart comparing
+    accuracy and model size on disk between the FP32 baseline and the
+    INT8 dynamically quantized model.
 
 References:
     - https://matplotlib.org/stable/
@@ -37,12 +37,11 @@ class QuantizationPlotter:
         stats: list[QuantizationStats],
         output_path: str | Path,
     ) -> None:
-        """Save a three-panel bar chart to *output_path*.
+        """Save a two-panel bar chart to *output_path*.
 
-        The three panels show:
+        The two panels show:
           1. Top-1 accuracy (%)
           2. Model size on disk (MB)
-          3. Total inference time (seconds)
 
         Args:
             stats: One ``QuantizationStats`` per variant, in display order.
@@ -51,9 +50,8 @@ class QuantizationPlotter:
         labels = [s.label for s in stats]
         accuracy = [s.accuracy for s in stats]
         disk_size = [s.disk_size_mb for s in stats]
-        elapsed = [s.elapsed_sec for s in stats]
 
-        fig, axes = plt.subplots(1, 3, figsize=(14, 5))
+        fig, axes = plt.subplots(1, 2, figsize=(10, 5))
         fig.suptitle(
             "Quantization Comparison: FP32 vs INT8 (Dynamic)",
             fontsize=14,
@@ -62,7 +60,6 @@ class QuantizationPlotter:
 
         self._bar(axes[0], labels, accuracy, "Top-1 Accuracy (%)")
         self._bar(axes[1], labels, disk_size, "Model Size on Disk (MB)")
-        self._bar(axes[2], labels, elapsed, "Inference Time (s)")
 
         fig.tight_layout()
 

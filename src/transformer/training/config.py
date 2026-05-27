@@ -28,14 +28,14 @@ class TransformerTrainingConfig:
     depth: int = 12
     num_heads: int = 12          # era 6
     mlp_ratio: float = 4.0
-    dropout: float = 0.15
-    drop_path_rate: float = 0.1  # era 0.20
+    dropout: float = 0.10         # 0.15 → 0.10: menos dropout de activación
+    drop_path_rate: float = 0.20  # 0.10 → 0.20: estándar ViT-Base (DeiT-B)
 
     # --- optimizador ---
-    learning_rate: float = 5e-4
-    weight_decay: float = 0.05
+    learning_rate: float = 3e-4   # 5e-4 → 3e-4: más estable para ViT-Base
+    weight_decay: float = 0.10    # 0.05 → 0.10: estándar ViT-Base (DeiT, MAE)
     label_smoothing: float = 0.15
-    grad_clip_norm: float = 1.0   # NUEVO
+    grad_clip_norm: float = 1.0
 
     # --- loss ---
     use_focal_loss: bool = False
@@ -46,7 +46,7 @@ class TransformerTrainingConfig:
 
     # --- bucle de entrenamiento ---
     epochs: int = 300
-    warmup_epochs: int = 20
+    warmup_epochs: int = 30       # 20 → 30: calentamiento más largo para ViT-Base
     patience: int = 35
     min_delta: float = 0.0005
     validate_every: int = 3

@@ -35,6 +35,7 @@ class DaliPipelineFactory:
         horizontal_flip_probability: float = 0.5,
         grayscale_probability: float = 0.15,
         erasing_probability: float = 0.35,
+        rotation_angle: float = 20.0,
         brightness_range: t.Tuple[float, float] = (0.75, 1.25),
         contrast_range: t.Tuple[float, float] = (0.75, 1.25),
         saturation_range: t.Tuple[float, float] = (0.70, 1.30),
@@ -59,6 +60,7 @@ class DaliPipelineFactory:
         self.horizontal_flip_probability = horizontal_flip_probability
         self.grayscale_probability = grayscale_probability
         self.erasing_probability = erasing_probability
+        self.rotation_angle = rotation_angle
 
         self.brightness_range = brightness_range
         self.contrast_range = contrast_range
@@ -96,6 +98,7 @@ class DaliPipelineFactory:
         horizontal_flip_probability = self.horizontal_flip_probability
         grayscale_probability = self.grayscale_probability
         erasing_probability = self.erasing_probability
+        rotation_angle = self.rotation_angle
 
         brightness_range = self.brightness_range
         contrast_range = self.contrast_range
@@ -191,6 +194,18 @@ class DaliPipelineFactory:
                 contrast=contrast,
                 saturation=saturation,
                 hue=hue,
+            )
+
+            # Rotación aleatoria ±rotation_angle grados.
+            # fill_value=0 rellena las esquinas con negro; keep_size=True
+            # mantiene las dimensiones de salida iguales al crop original.
+            angle = fn.random.uniform(range=(-rotation_angle, rotation_angle))
+            images = fn.rotate(
+                images,
+                device="gpu",
+                angle=angle,
+                fill_value=0,
+                keep_size=True,
             )
 
             do_erase = fn.random.coin_flip(probability=erasing_probability)

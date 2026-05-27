@@ -64,16 +64,27 @@ class TrainingPlotter:
         save_path: t.Optional[t.Union[str, Path]] = "outputs/figures/transformer/V100/training_curves.png",
         energy_stats: t.Optional[t.Dict[str, t.Any]] = None,
         device_info: t.Optional[str] = None,
+        show_power: bool = True,
     ) -> None:
         """Genera y guarda la gráfica de curvas de entrenamiento.
 
-        Crea 2 paneles (accuracy + loss) si no hay datos de potencia,
-        o 3 paneles (accuracy + loss + potencia GPU) si los hay.
+        Crea 2 paneles (accuracy + loss) si no hay datos de potencia o
+        ``show_power=False``, o 3 paneles (accuracy + loss + potencia GPU)
+        cuando ``show_power=True`` y hay lecturas reales de potencia.
+
+        Args:
+            save_path:    Ruta donde guardar la figura PNG.
+            energy_stats: Diccionario con métricas de energía (opcional).
+            device_info:  Descripción del dispositivo que aparece en el
+                          recuadro de energía (opcional).
+            show_power:   Si ``False``, omite el panel de potencia GPU
+                          aunque haya datos disponibles (útil para DDP,
+                          donde solo el rango 0 tiene mediciones).
         """
         self._validate_history()
 
         epochs = list(range(1, len(self.train_acc) + 1))
-        has_power = any(p > 0.0 for p in self.train_gpu_power_w)
+        has_power = show_power and any(p > 0.0 for p in self.train_gpu_power_w)
 
         if has_power:
             fig, axes = plt.subplots(1, 3, figsize=(18, 5))
@@ -85,10 +96,13 @@ class TrainingPlotter:
             self._plot_accuracy(axes[0], epochs)
             self._plot_loss(axes[1], epochs)
 
+        # Reserva margen inferior para el recuadro de energía y lo añade
+        # DESPUÉS de tight_layout para que no quede tapado por los ejes.
         if energy_stats is not None:
+            fig.tight_layout(rect=[0, 0.18, 1, 1])
             self._add_energy_text(fig, energy_stats, device_info)
-
-        fig.tight_layout()
+        else:
+            fig.tight_layout()
 
         if save_path is not None:
             output_path = Path(save_path)
@@ -185,29 +199,27 @@ class TrainingPlotter:
         energy_stats: t.Dict[str, t.Any],
         device_info: t.Optional[str],
     ) -> None:
-        """Añade un recuadro con las métricas de energía y dispositivo a la figura."""
-        gpu_joules, cpu_joules, elapsed_seconds = self._extract_energy_stats(energy_stats)
-        total_joules = gpu_joules + cpu_joules
+        """Añade un recuadro con métricas de energía GPU en el margen inferior.
+
+        El recuadro se coloca centrado por debajo de los paneles de gráficas,
+        en el espacio reservado con ``tight_layout(rect=[0, 0.18, 1, 1])``.
+        """
+        gpu_joules, _cpu_joules, elapsed_seconds = self._extract_energy_stats(energy_stats)
 
         text = (
-            "Device: {}\n"
-            "GPU Energy: {:.4f} J\n"
-            "CPU Energy: {:.4f} J\n"
-            "Total Energy: {:.4f} J\n"
-            "Time: {:.2f} min"
+            "Device: {}   |   GPU Energy: {:.4f} J   |   Time: {:.2f} min"
         ).format(
             device_info or "Unknown",
             gpu_joules,
-            cpu_joules,
-            total_joules,
             elapsed_seconds / 60,
         )
 
         figure.text(
-            0.02,
-            0.02,
+            0.5,
+            0.04,
             text,
             fontsize=9,
+            ha="center",
             verticalalignment="bottom",
             bbox={"boxstyle": "round", "facecolor": "white", "alpha": 0.85},
         )

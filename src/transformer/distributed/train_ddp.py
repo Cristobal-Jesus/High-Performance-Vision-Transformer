@@ -328,6 +328,7 @@ class DDPTrainingApplication(TransformerTrainingApplication):
             save_path=self.config.figure_path,
             energy_stats={"meas": energy_stats, "elapsed": elapsed},
             device_info=self._get_device_info(),
+            show_power=False,   # DDP: el rango 0 no tiene mediciones por cada GPU
         )
 
 
