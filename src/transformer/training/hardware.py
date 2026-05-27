@@ -121,7 +121,7 @@ def detect_gpu_profile(device_id: int = 0) -> GpuProfile:
             supports_bf16=True,
             supports_fp8=True,
             recommended_batch_size=1024,
-            recommended_prefetch=8,
+            recommended_prefetch=4,
             recommended_num_threads=32,
             compile_mode="max-autotune",
             root_dir="/home/almeida/Cristobal/Images/dataset_256",
@@ -132,8 +132,8 @@ def detect_gpu_profile(device_id: int = 0) -> GpuProfile:
             dali_host_memory_padding=_DATASET_PADDING_BYTES,
             dali_preallocate_width_hint=256,
             dali_preallocate_height_hint=256,
-            dali_decoder_cache_size=4096,           # 4 GB caché validación
-            dali_train_decoder_cache_size=40_000,   # 40 GB caché entrenamiento
+            dali_decoder_cache_size=0,           # 4 GB caché validación
+            dali_train_decoder_cache_size=20_000,   # 40 GB caché entrenamiento
         )
 
     # V100 — Volta, 16 o 32 GB HBM2

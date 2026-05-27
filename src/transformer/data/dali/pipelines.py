@@ -38,7 +38,7 @@ class DaliPipelineFactory:
         brightness_range: t.Tuple[float, float] = (0.75, 1.25),
         contrast_range: t.Tuple[float, float] = (0.75, 1.25),
         saturation_range: t.Tuple[float, float] = (0.70, 1.30),
-        hue_range: t.Tuple[float, float] = (-10.0, 10.0),
+        hue_range: t.Tuple[float, float] = (-20.0, 20.0),
         erasing_area_range: t.Tuple[float, float] = (0.02, 0.20),
         erasing_aspect_ratio_range: t.Tuple[float, float] = (0.3, 3.3),
         decoder_cache_size: int = 0,
@@ -148,8 +148,8 @@ class DaliPipelineFactory:
                     images,
                     device="gpu",
                     size=[crop, crop],
-                    random_area=[0.8, 1.0],
-                    random_aspect_ratio=[0.75, 1.33],
+                    random_area=[0.5, 1.0],
+                    random_aspect_ratio=[0.67, 1.50],
                 )
             else:
                 # Sin caché: decoder fusionado con el crop (más eficiente
@@ -158,8 +158,8 @@ class DaliPipelineFactory:
                     images,
                     device="mixed",
                     output_type=types.RGB,
-                    random_area=(0.8, 1.0),
-                    random_aspect_ratio=(0.75, 1.33),
+                    random_area=[0.5, 1.0],
+                    random_aspect_ratio=[0.67, 1.50],
                     hw_decoder_load=hw_decoder_load,
                     device_memory_padding=device_memory_padding,
                     host_memory_padding=host_memory_padding,

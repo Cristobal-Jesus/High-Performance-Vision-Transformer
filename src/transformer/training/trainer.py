@@ -26,7 +26,7 @@ from tqdm import tqdm
 from .batch_processor import PatchBatchProcessor
 from .hardware import GpuProfile
 from .mixup import MixupAugmentor
-from .config import TransformerTrainingConfig 
+from .config import TransformerTrainingConfig
 
 
 class TransformerTrainer:
@@ -53,6 +53,8 @@ class TransformerTrainer:
         show_progress_bar: bool = True,
         grad_clip_norm: float = 1.0,
         config: TransformerTrainingConfig = None,
+        ddp_rank: int = 0,
+        is_ddp: bool = False,
     ) -> None:
         self.model = model
         self.train_loader = train_loader
@@ -75,34 +77,58 @@ class TransformerTrainer:
         self.show_progress_bar = show_progress_bar
         self.grad_clip_norm = grad_clip_norm
         self.checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+        self.ddp_rank = ddp_rank
+        self.is_ddp = is_ddp
+        self.config = config
 
         self._amp_dtype = self._select_amp_dtype()
-        # GradScaler is required when training in float16 to avoid gradient
-        # underflow. With bfloat16 (Ampere+) it must NOT be used.
         use_scaler = (
             self._amp_dtype == torch.float16
             and self.device.type == "cuda"
         )
         self._scaler = torch.cuda.amp.GradScaler() if use_scaler else None
-        self.config = config
+        self._nvml_handle = self._init_nvml_handle()
 
     def _select_amp_dtype(self) -> t.Optional[torch.dtype]:
+        """Elige el dtype de precisión mixta según el perfil de GPU."""
         if self.device.type != "cuda":
             return None
         if self.gpu_profile is not None and self.gpu_profile.amp_dtype is not None:
             return self.gpu_profile.amp_dtype
-        # Fallback: detect from compute capability if profile not provided.
         cap = torch.cuda.get_device_capability(self.device)
         return torch.bfloat16 if cap[0] >= 8 else torch.float16
 
+    def _init_nvml_handle(self):
+        """Inicializa pynvml y devuelve el handle de la GPU. None si no disponible."""
+        if self.device.type != "cuda":
+            return None
+        try:
+            import pynvml
+            pynvml.nvmlInit()
+            idx = self.device.index if self.device.index is not None else 0
+            return pynvml.nvmlDeviceGetHandleByIndex(idx)
+        except Exception:
+            return None
+
+    def _sample_gpu_power_w(self) -> float:
+        """Devuelve la potencia instantánea de la GPU en vatios. 0.0 si no disponible."""
+        if self._nvml_handle is None:
+            return 0.0
+        try:
+            import pynvml
+            return pynvml.nvmlDeviceGetPowerUsage(self._nvml_handle) / 1000.0
+        except Exception:
+            return 0.0
+
     def fit(self, epochs: int) -> t.Dict[str, t.Union[float, int]]:
-        """Run the full training process."""
+        """Ejecuta el ciclo completo de entrenamiento."""
         best_val_loss = float("inf")
         best_epoch = -1
         epochs_without_improvement = 0
-        last_val_metrics = {
+        last_val_metrics: t.Dict[str, t.Any] = {
             "val_loss": float("nan"),
             "val_acc": float("nan"),
+            "val_gpu_power_w": None,
         }
 
         for epoch in range(epochs):
@@ -123,7 +149,7 @@ class TransformerTrainer:
                 best_epoch = epoch + 1
                 epochs_without_improvement = 0
                 is_best = True
-                torch.save(self.model.state_dict(), self.checkpoint_path)
+                self._save_checkpoint()
             elif should_validate:
                 epochs_without_improvement += 1
 
@@ -133,6 +159,8 @@ class TransformerTrainer:
                 train_loss=train_metrics["train_loss"],
                 val_loss=val_metrics["val_loss"],
                 is_best=is_best,
+                train_gpu_power_w=train_metrics.get("train_gpu_power_w", 0.0),
+                val_gpu_power_w=val_metrics.get("val_gpu_power_w") if should_validate else None,
             )
 
             print(
@@ -151,22 +179,29 @@ class TransformerTrainer:
             "best_epoch": best_epoch,
         }
 
+    def _save_checkpoint(self) -> None:
+        """Guarda el checkpoint. En DDP solo escribe el rango 0."""
+        if self.is_ddp and self.ddp_rank != 0:
+            return
+        model_state = getattr(self.model, "module", self.model).state_dict()
+        torch.save(model_state, self.checkpoint_path)
+
     def _prepare_inputs(self, data):
-        """Prepare model inputs and labels from one loader batch."""
+        """Prepara las entradas del modelo desde un lote del loader."""
         if self.batch_processor is not None:
             return self.batch_processor.prepare_batch(data, self.device)
-
         batch = data[0]
         images = batch["images"].to(self.device, non_blocking=True)
         labels = batch["labels"].squeeze(-1).long().to(self.device, non_blocking=True)
         return images, labels
 
-    def _train_one_epoch(self, epoch: int, epochs: int) -> t.Dict[str, float]:
-        """Train the model for one epoch."""
+    def _train_one_epoch(self, epoch: int, epochs: int) -> t.Dict[str, t.Any]:
+        """Entrena el modelo durante un epoch completo."""
         self.model.train()
         train_correct = torch.zeros((), device=self.device, dtype=torch.float32)
         train_loss_sum = torch.zeros((), device=self.device, dtype=torch.float32)
         train_total = 0
+        power_samples: t.List[float] = []
 
         progress = tqdm(
             self.train_loader,
@@ -175,7 +210,7 @@ class TransformerTrainer:
             disable=not self.show_progress_bar,
         )
 
-        for data in progress:
+        for i, data in enumerate(progress):
             inputs, labels = self._prepare_inputs(data)
             inputs, y_a, y_b, lam = self.mixup_augmentor.apply(inputs, labels)
 
@@ -190,7 +225,6 @@ class TransformerTrainer:
                 else:
                     loss = self.criterion(outputs, labels)
 
-            # Reemplaza el bloque if self._scaler por:
             if self._scaler is not None:
                 self._scaler.scale(loss).backward()
                 self._scaler.unscale_(self.optimizer)
@@ -216,17 +250,26 @@ class TransformerTrainer:
 
             train_total += batch_size
 
+            if i % 25 == 12:
+                power_samples.append(self._sample_gpu_power_w())
+
+        avg_power_w = (
+            sum(power_samples) / len(power_samples) if power_samples else 0.0
+        )
+
         return {
             "train_loss": (train_loss_sum / max(1, train_total)).item(),
             "train_acc": (100.0 * train_correct / max(1, train_total)).item(),
+            "train_gpu_power_w": avg_power_w,
         }
 
-    def _validate_one_epoch(self) -> t.Dict[str, float]:
-        """Evaluate the model on the validation split."""
+    def _validate_one_epoch(self) -> t.Dict[str, t.Any]:
+        """Evalúa el modelo sobre el split de validación."""
         self.model.eval()
         val_loss_sum = torch.zeros((), device=self.device, dtype=torch.float32)
         val_correct = torch.zeros((), device=self.device, dtype=torch.float32)
         val_total = 0
+        power_samples: t.List[float] = []
 
         val_iterable = self.val_loader
         if self.max_val_batches is not None:
@@ -235,29 +278,34 @@ class TransformerTrainer:
 
         try:
             with torch.inference_mode():
-                for data in val_iterable:
+                for i, data in enumerate(val_iterable):
                     inputs, labels = self._prepare_inputs(data)
-
                     with self._autocast_context():
                         outputs = self.model(inputs)
                         loss = self.criterion(outputs, labels)
-
                     batch_size = labels.size(0)
                     val_loss_sum += loss.detach().float() * batch_size
                     _, preds = outputs.max(1)
                     val_correct += preds.eq(labels).sum().float()
                     val_total += batch_size
+                    if i % 5 == 2:
+                        power_samples.append(self._sample_gpu_power_w())
         finally:
             if self.max_val_batches is not None:
                 self._reset_loader(self.val_loader)
 
+        avg_power_w = (
+            sum(power_samples) / len(power_samples) if power_samples else 0.0
+        )
+
         return {
             "val_loss": (val_loss_sum / max(1, val_total)).item(),
             "val_acc": (100.0 * val_correct / max(1, val_total)).item(),
+            "val_gpu_power_w": avg_power_w,
         }
 
     def _step_scheduler(self, val_loss: t.Optional[float]) -> None:
-        """Advance the scheduler after each epoch."""
+        """Avanza el scheduler tras cada epoch."""
         if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
             if val_loss is not None:
                 self.scheduler.step(val_loss)
@@ -265,7 +313,7 @@ class TransformerTrainer:
             self.scheduler.step()
 
     def _should_validate(self, epoch: int, epochs: int) -> bool:
-        """Return whether validation should run after the current epoch."""
+        """Indica si se debe validar al final del epoch actual."""
         epoch_number = epoch + 1
         return (
             epoch_number == 1
@@ -275,27 +323,26 @@ class TransformerTrainer:
 
     @staticmethod
     def _reset_loader(loader) -> None:
-        """Reset iterators such as DALI when the epoch was only partially consumed."""
+        """Reinicia iteradores como DALI cuando el epoch se consumió parcialmente."""
         reset = getattr(loader, "reset", None)
         if reset is not None:
             reset()
 
     @staticmethod
     def _format_validation_metrics(
-        val_metrics: t.Dict[str, float],
+        val_metrics: t.Dict[str, t.Any],
         was_validated: bool,
     ) -> str:
-        """Format validation metrics without pretending skipped epochs were evaluated."""
+        """Formatea las métricas de validación para el log."""
         if not was_validated:
             return "Val: skipped"
-
         return (
             f"Val Loss: {val_metrics['val_loss']:.4f} | "
             f"Val Acc: {val_metrics['val_acc']:.2f}%"
         )
 
     def _autocast_context(self):
-        """Return the autocast context used during forward passes."""
+        """Devuelve el contexto de autocast para los forward passes."""
         if self._amp_dtype is None:
             return nullcontext()
         return torch.amp.autocast(device_type="cuda", dtype=self._amp_dtype)

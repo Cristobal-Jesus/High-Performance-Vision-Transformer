@@ -24,16 +24,16 @@ class TransformerTrainingConfig:
     image_size: int = 224
     patch_size: int = 16
     num_classes: int = 20
-    embed_dim: int = 512        # era 384
+    embed_dim: int = 768        # era 384
     depth: int = 12
-    num_heads: int = 8          # era 6
+    num_heads: int = 12          # era 6
     mlp_ratio: float = 4.0
-    dropout: float = 0.1
-    drop_path_rate: float = 0.25  # era 0.20
+    dropout: float = 0.15
+    drop_path_rate: float = 0.1  # era 0.20
 
     # --- optimizador ---
-    learning_rate: float = 3e-4
-    weight_decay: float = 0.10
+    learning_rate: float = 5e-4
+    weight_decay: float = 0.05
     label_smoothing: float = 0.15
     grad_clip_norm: float = 1.0   # NUEVO
 
@@ -45,11 +45,11 @@ class TransformerTrainingConfig:
     mixup_alpha: float = 0.0
 
     # --- bucle de entrenamiento ---
-    epochs: int = 200
-    warmup_epochs: int = 10
-    patience: int = 25
+    epochs: int = 300
+    warmup_epochs: int = 20
+    patience: int = 35
     min_delta: float = 0.0005
-    validate_every: int = 1
+    validate_every: int = 3
     max_val_batches: t.Optional[int] = None
 
     # --- DALI (None → se rellenan desde GpuProfile) ---
