@@ -24,6 +24,8 @@ from torch import nn
 from tqdm import tqdm
 
 from .batch_processor import PatchBatchProcessor
+from .cutmix import CutMixAugmentor
+from .ema import EMAModel
 from .hardware import GpuProfile
 from .mixup import MixupAugmentor
 from .config import TransformerTrainingConfig
@@ -55,6 +57,8 @@ class TransformerTrainer:
         config: TransformerTrainingConfig = None,
         ddp_rank: int = 0,
         is_ddp: bool = False,
+        cutmix_augmentor: t.Optional[CutMixAugmentor] = None,
+        ema_decay: float = 0.0,
     ) -> None:
         self.model = model
         self.train_loader = train_loader
@@ -66,6 +70,7 @@ class TransformerTrainer:
         self.device = device
         self.batch_processor = batch_processor
         self.mixup_augmentor = mixup_augmentor
+        self.cutmix_augmentor = cutmix_augmentor or CutMixAugmentor(alpha=0.0)
         self.checkpoint_path = Path(checkpoint_path)
         self.gpu_profile = gpu_profile
         self.patience = patience
@@ -80,6 +85,11 @@ class TransformerTrainer:
         self.ddp_rank = ddp_rank
         self.is_ddp = is_ddp
         self.config = config
+
+        # EMA: se inicializa solo si decay > 0
+        self._ema: t.Optional[EMAModel] = (
+            EMAModel(model, decay=ema_decay) if ema_decay > 0.0 else None
+        )
 
         self._amp_dtype = self._select_amp_dtype()
         use_scaler = (
@@ -180,20 +190,79 @@ class TransformerTrainer:
         }
 
     def _save_checkpoint(self) -> None:
-        """Guarda el checkpoint. En DDP solo escribe el rango 0."""
+        """Guarda el checkpoint. En DDP solo escribe el rango 0.
+
+        Si EMA está activo, guarda los pesos EMA (mejor para inferencia).
+        """
         if self.is_ddp and self.ddp_rank != 0:
             return
-        model_state = getattr(self.model, "module", self.model).state_dict()
-        torch.save(model_state, self.checkpoint_path)
+        if self._ema is not None:
+            torch.save(self._ema.state_dict(), self.checkpoint_path)
+        else:
+            model_state = getattr(self.model, "module", self.model).state_dict()
+            torch.save(model_state, self.checkpoint_path)
 
     def _prepare_inputs(self, data):
-        """Prepara las entradas del modelo desde un lote del loader."""
+        """Prepara las entradas del modelo desde un lote del loader.
+
+        Usado solo en validación (sin augmentación). Para entrenamiento
+        con CutMix se usa ``_load_images`` + ``_to_model_input``.
+        """
         if self.batch_processor is not None:
             return self.batch_processor.prepare_batch(data, self.device)
         batch = data[0]
         images = batch["images"].to(self.device, non_blocking=True)
         labels = batch["labels"].squeeze(-1).long().to(self.device, non_blocking=True)
         return images, labels
+
+    def _load_images(self, data) -> t.Tuple[torch.Tensor, torch.Tensor]:
+        """Desempaqueta el lote DALI y mueve al dispositivo sin parchificar.
+
+        Devuelve imágenes en crudo ``(B, C, H, W)`` y etiquetas ``(B,)``.
+        CutMix necesita la estructura espacial antes de la parchificación.
+        """
+        batch = data[0]
+        images = batch["images"].to(self.device, non_blocking=True)
+        labels = batch["labels"].squeeze(-1).long().to(self.device, non_blocking=True)
+        return images, labels
+
+    def _to_model_input(self, images: torch.Tensor) -> torch.Tensor:
+        """Convierte imágenes en crudo ``(B, C, H, W)`` a la entrada del modelo.
+
+        Si hay ``batch_processor``, aplica la parchificación para el ViT.
+        De lo contrario devuelve las imágenes tal cual.
+        """
+        if self.batch_processor is not None:
+            return self.batch_processor.patchify(images)
+        return images
+
+    def _apply_batch_augmentation(
+        self,
+        images: torch.Tensor,
+        labels: torch.Tensor,
+    ) -> t.Tuple[torch.Tensor, torch.Tensor, torch.Tensor, float]:
+        """Aplica CutMix, Mixup o ninguno según la configuración.
+
+        Si ambos están activos, elige aleatoriamente uno de los dos.
+        CutMix tiene prioridad por defecto (50/50 si ambos están activos).
+
+        Returns:
+            ``(images_aug, y_a, y_b, lam)``
+        """
+        use_cutmix = self.cutmix_augmentor.enabled
+        use_mixup  = self.mixup_augmentor.enabled
+
+        if use_cutmix and use_mixup:
+            if torch.rand(1).item() < 0.5:
+                return self.cutmix_augmentor.apply(images, labels)
+            else:
+                return self.mixup_augmentor.apply(images, labels)
+        elif use_cutmix:
+            return self.cutmix_augmentor.apply(images, labels)
+        elif use_mixup:
+            return self.mixup_augmentor.apply(images, labels)
+        else:
+            return images, labels, labels, 1.0
 
     def _train_one_epoch(self, epoch: int, epochs: int) -> t.Dict[str, t.Any]:
         """Entrena el modelo durante un epoch completo."""
@@ -211,20 +280,33 @@ class TransformerTrainer:
         )
 
         for i, data in enumerate(progress):
-            inputs, labels = self._prepare_inputs(data)
-            inputs, y_a, y_b, lam = self.mixup_augmentor.apply(inputs, labels)
+            # --- 1. Cargar imágenes en crudo (sin parchificar) ---
+            images, labels = self._load_images(data)
 
+            # --- 2. Augmentación (CutMix / Mixup / ninguna) ---
+            # Se aplica antes de parchificar porque CutMix necesita la
+            # estructura espacial 2D de la imagen.
+            images, y_a, y_b, lam = self._apply_batch_augmentation(images, labels)
+
+            # --- 3. Convertir a entrada del modelo (parchificar si ViT) ---
+            inputs = self._to_model_input(images)
+
+            # --- 4. Forward + loss ---
             self.optimizer.zero_grad(set_to_none=True)
+
+            mixing_active = lam < 1.0 and not torch.equal(y_a, y_b)
 
             with self._autocast_context():
                 outputs = self.model(inputs)
-                if self.mixup_augmentor.enabled:
-                    loss = lam * self.criterion(outputs, y_a) + (
-                        1.0 - lam
-                    ) * self.criterion(outputs, y_b)
+                if mixing_active:
+                    loss = (
+                        lam * self.criterion(outputs, y_a)
+                        + (1.0 - lam) * self.criterion(outputs, y_b)
+                    )
                 else:
                     loss = self.criterion(outputs, labels)
 
+            # --- 5. Backward + clip + step ---
             if self._scaler is not None:
                 self._scaler.scale(loss).backward()
                 self._scaler.unscale_(self.optimizer)
@@ -236,11 +318,16 @@ class TransformerTrainer:
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.grad_clip_norm)
                 self.optimizer.step()
 
+            # --- 6. Actualizar copia EMA ---
+            if self._ema is not None:
+                self._ema.update(self.model)
+
+            # --- 7. Métricas ---
             batch_size = labels.size(0)
             train_loss_sum += loss.detach().float() * batch_size
 
             _, preds = outputs.max(1)
-            if self.mixup_augmentor.enabled:
+            if mixing_active:
                 train_correct += (
                     lam * preds.eq(y_a).sum().float()
                     + (1.0 - lam) * preds.eq(y_b).sum().float()
@@ -264,8 +351,14 @@ class TransformerTrainer:
         }
 
     def _validate_one_epoch(self) -> t.Dict[str, t.Any]:
-        """Evalúa el modelo sobre el split de validación."""
-        self.model.eval()
+        """Evalúa el modelo sobre el split de validación.
+
+        Usa la copia EMA si está disponible, ya que sus pesos son más
+        estables y suelen dar mejor accuracy que el modelo en entrenamiento.
+        """
+        eval_model = self._ema.model if self._ema is not None else self.model
+        eval_model.eval()
+        self.model.eval()   # necesario para DDP / batch norm
         val_loss_sum = torch.zeros((), device=self.device, dtype=torch.float32)
         val_correct = torch.zeros((), device=self.device, dtype=torch.float32)
         val_total = 0
@@ -281,7 +374,7 @@ class TransformerTrainer:
                 for i, data in enumerate(val_iterable):
                     inputs, labels = self._prepare_inputs(data)
                     with self._autocast_context():
-                        outputs = self.model(inputs)
+                        outputs = eval_model(inputs)
                         loss = self.criterion(outputs, labels)
                     batch_size = labels.size(0)
                     val_loss_sum += loss.detach().float() * batch_size

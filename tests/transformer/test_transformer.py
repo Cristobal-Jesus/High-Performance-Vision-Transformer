@@ -90,21 +90,43 @@ class Evaluator:
 
     def _load_model(self, checkpoint_path: str, scratch: bool) -> nn.Module:
         if scratch:
-            model = VisionTransformer().to(self.device)
-            state_dict = torch.load(checkpoint_path, map_location=self.device)
+            # Arquitectura idéntica a la usada en el entrenamiento (config.py)
+            model = VisionTransformer(
+                patch_dim=16 * 16 * 3,       # patch_size=16
+                seq_len=(224 // 16) ** 2,    # 196 tokens
+                embed_dim=384,
+                num_classes=len(CLASS_NAMES),
+                depth=12,
+                num_heads=6,
+                mlp_ratio=4.0,
+                dropout=0.0,                 # eval: dropout desactivado
+                drop_path_rate=0.0,          # eval: drop_path desactivado
+                use_patch_norm=True,
+            ).to(self.device)
+
+            state_dict = torch.load(
+                checkpoint_path, map_location=self.device, weights_only=True
+            )
+            # El checkpoint puede tener el prefijo "_orig_mod." si el modelo
+            # fue guardado desde un torch.compile (OptimizedModule).
+            state_dict = {
+                k.replace("_orig_mod.", ""): v for k, v in state_dict.items()
+            }
             model.load_state_dict(state_dict)
             model.eval()
             return model
 
-        vit_model = vit_b_16(weights=None)              # No hace falta cargar ImageNet si cargamos checkpoint
+        # --- torchvision ViT-B/16 (checkpoint legacy) ---
+        vit_model = vit_b_16(weights=None)
         vit_model.heads.head = nn.Linear(
             vit_model.heads.head.in_features,
-            len(CLASS_NAMES),                           # Fix 1: era self.config.num_classes
+            len(CLASS_NAMES),
         )
 
-        state_dict = torch.load(checkpoint_path, map_location=self.device)
-        vit_model.load_state_dict(state_dict)           # Fix 2: checkpoint nunca se cargaba
-
+        state_dict = torch.load(
+            checkpoint_path, map_location=self.device, weights_only=True
+        )
+        vit_model.load_state_dict(state_dict)
         vit_model.to(self.device)
 
         model = vit_model
@@ -113,8 +135,9 @@ class Evaluator:
         except Exception as exc:
             print(f"[torch.compile] Disabled: {exc}")
 
-        model.eval()                                    # Fix 3: faltaba eval()
+        model.eval()
         return model
+
 
     @staticmethod
     def _label_from_filename(

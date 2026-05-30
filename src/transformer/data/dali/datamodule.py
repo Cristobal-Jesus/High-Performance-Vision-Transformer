@@ -163,6 +163,8 @@ class DaliDataModule(pl.LightningDataModule):
             file_list=self.train_file_list,
             crop=self.image_size,
             prefetch_queue_depth=self.train_prefetch_queue_depth,
+            shard_id=self.shard_id,
+            num_shards=self.num_shards,
         )
         train_pipe.build()
 

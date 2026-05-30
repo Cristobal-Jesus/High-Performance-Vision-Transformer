@@ -90,6 +90,8 @@ class DaliPipelineFactory:
         file_list: str,
         crop: int = 224,
         prefetch_queue_depth: int = 3,
+        shard_id: int = 0,
+        num_shards: int = 1,
     ):
         """Create the DALI pipeline used during training."""
         mean = self.mean
@@ -117,6 +119,9 @@ class DaliPipelineFactory:
         read_ahead = self.read_ahead
         train_decoder_cache_size = self.train_decoder_cache_size
         decoder_cache_threshold = self.decoder_cache_threshold
+        
+        _shard_id = shard_id
+        _num_shards = num_shards
 
         @pipeline_def(enable_conditionals=True)
         def pipeline(file_list: str, crop: int = 224):
@@ -128,6 +133,8 @@ class DaliPipelineFactory:
                 read_ahead=read_ahead,
                 prefetch_queue_depth=reader_prefetch_queue_depth,
                 skip_cached_images=train_decoder_cache_size > 0,
+                shard_id=_shard_id,
+                num_shards=_num_shards,
             )
 
             if train_decoder_cache_size > 0:

@@ -36,6 +36,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from transformer.data.dali.datamodule import DaliDataModule
 from transformer.training.batch_processor import PatchBatchProcessor
 from transformer.training.config import TransformerTrainingConfig
+from transformer.training.cutmix import CutMixAugmentor
 from transformer.training.mixup import MixupAugmentor
 from transformer.training.schedulers import SchedulerFactory
 from transformer.training.train_transformer import TransformerTrainingApplication
@@ -211,6 +212,8 @@ class DDPTrainingApplication(TransformerTrainingApplication):
             device=device,
             batch_processor=PatchBatchProcessor(self.config.patch_size),
             mixup_augmentor=MixupAugmentor(self.config.mixup_alpha),
+            cutmix_augmentor=CutMixAugmentor(self.config.cutmix_alpha),
+            ema_decay=self.config.ema_decay,
             checkpoint_path=self.config.checkpoint_path,
             gpu_profile=self.config._gpu_profile,
             patience=self.config.patience,

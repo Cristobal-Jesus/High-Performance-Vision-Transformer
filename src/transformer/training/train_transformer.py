@@ -28,6 +28,7 @@ from transformer.training.batch_processor import PatchBatchProcessor
 from transformer.training.config import TransformerTrainingConfig
 from transformer.training.energy.cpu_energy_meter import RAPLCPUEnergyMeter
 from transformer.training.energy.gpu_energy_meter import EMLGPUEnergyMeter, SlurmGPUSelector
+from transformer.training.cutmix import CutMixAugmentor
 from transformer.training.mixup import MixupAugmentor
 from transformer.training.schedulers import SchedulerFactory
 from transformer.training.trainer import TransformerTrainer
@@ -88,6 +89,7 @@ class TransformerTrainingApplication:
                 "elapsed": elapsed_total,
             },
             device_info=self._get_device_info(),
+            show_power=False,
         )
 
         data_module.teardown()
@@ -130,14 +132,16 @@ class TransformerTrainingApplication:
             device=device,
             batch_processor=PatchBatchProcessor(self.config.patch_size),
             mixup_augmentor=MixupAugmentor(self.config.mixup_alpha),
+            cutmix_augmentor=CutMixAugmentor(self.config.cutmix_alpha),
+            ema_decay=self.config.ema_decay,
             checkpoint_path=self.config.checkpoint_path,
-            gpu_profile=self.config._gpu_profile,      # ← antes faltaba
+            gpu_profile=self.config._gpu_profile,
             patience=self.config.patience,
             min_delta=self.config.min_delta,
-            validate_every=self.config.validate_every,  # ← antes faltaba
-            max_val_batches=self.config.max_val_batches, # ← antes faltaba
-            show_progress_bar=self.config.show_progress_bar, # ← antes faltaba
-            grad_clip_norm=self.config.grad_clip_norm,  # ← nuevo
+            validate_every=self.config.validate_every,
+            max_val_batches=self.config.max_val_batches,
+            show_progress_bar=self.config.show_progress_bar,
+            grad_clip_norm=self.config.grad_clip_norm,
         )
 
     def _build_model(self, device: torch.device) -> nn.Module:

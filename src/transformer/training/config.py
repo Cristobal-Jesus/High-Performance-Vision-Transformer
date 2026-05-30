@@ -24,17 +24,17 @@ class TransformerTrainingConfig:
     image_size: int = 224
     patch_size: int = 16
     num_classes: int = 20
-    embed_dim: int = 768        # era 384
+    embed_dim: int = 384        # era 384
     depth: int = 12
-    num_heads: int = 12          # era 6
+    num_heads: int = 6          # era 6
     mlp_ratio: float = 4.0
     dropout: float = 0.10         # 0.15 → 0.10: menos dropout de activación
-    drop_path_rate: float = 0.20  # 0.10 → 0.20: estándar ViT-Base (DeiT-B)
+    drop_path_rate: float = 0.10  # 0.10 → 0.20: estándar ViT-Base (DeiT-B)
 
     # --- optimizador ---
-    learning_rate: float = 3e-4   # 5e-4 → 3e-4: más estable para ViT-Base
+    learning_rate: float = 5e-4   # 5e-4 → 3e-4: más estable para ViT-Base
     weight_decay: float = 0.10    # 0.05 → 0.10: estándar ViT-Base (DeiT, MAE)
-    label_smoothing: float = 0.15
+    label_smoothing: float = 0.10
     grad_clip_norm: float = 1.0
 
     # --- loss ---
@@ -42,12 +42,14 @@ class TransformerTrainingConfig:
     focal_gamma: float = 2.0
 
     # --- augmentation ---
-    mixup_alpha: float = 0.0
+    mixup_alpha: float = 0.8     # MixUp activo por defecto (0.0 = desactivado)
+    cutmix_alpha: float = 1.0   # CutMix activo por defecto (0.0 = desactivado)
+    ema_decay: float = 0.9998   # EMA activo por defecto (0.0 = desactivado)
 
     # --- bucle de entrenamiento ---
     epochs: int = 300
-    warmup_epochs: int = 30       # 20 → 30: calentamiento más largo para ViT-Base
-    patience: int = 35
+    warmup_epochs: int = 20       # 20 → 30: calentamiento más largo para ViT-Base
+    patience: int = 40
     min_delta: float = 0.0005
     validate_every: int = 3
     max_val_batches: t.Optional[int] = None
@@ -106,12 +108,14 @@ class TransformerTrainingConfig:
                                  "/home/almeida/Cristobal/Images/dataset_256")
 
         if self.checkpoint_path is None:
+            size_tag = f"e{self.embed_dim}"
             self.checkpoint_path = Path(
-                f"checkpoints/transformer/best_transformer.pth"
+                f"checkpoints/transformer/best_transformer_{size_tag}.pth"
             )
         if self.figure_path is None:
+            size_tag = f"e{self.embed_dim}"
             self.figure_path = Path(
-                f"outputs/figures/transformer/{folder}/training_curves.png"
+                f"outputs/figures/transformer/{folder}/{size_tag}/training_curves.png"
             )
 
         self.train_batch_size = _resolve(
