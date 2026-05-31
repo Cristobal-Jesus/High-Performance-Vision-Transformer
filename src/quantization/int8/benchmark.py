@@ -140,6 +140,8 @@ class InferenceBenchmark:
             A tuple ``(accuracy_percent, elapsed_sec)``.
         """
         loader = self._build_loader(images_dir)
+        # torch.quantization.quantize_dynamic produce modelos qint8 que solo
+        # funcionan en CPU. No se puede mover a CUDA — limitación de PyTorch.
         device = torch.device("cpu")
 
         correct = 0

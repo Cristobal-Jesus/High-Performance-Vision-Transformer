@@ -68,7 +68,10 @@ class ModelFactory:
             drop_path_rate=0.0,
         )
 
-        state_dict = torch.load(self._checkpoint_path, map_location="cpu")
+        state_dict = torch.load(
+            self._checkpoint_path, map_location="cpu", weights_only=True
+        )
+        state_dict = {k.replace("_orig_mod.", ""): v for k, v in state_dict.items()}
         model.load_state_dict(state_dict)
         model.eval()
         return model
