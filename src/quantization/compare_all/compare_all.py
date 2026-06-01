@@ -19,9 +19,14 @@ Usage:
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from transformer.training.config import TransformerTrainingConfig
 from .comparator import AllQuantizationComparator
 from .plotter import AllQuantizationPlotter
+
+
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]  # .../High-Performance-Vision-Transformer
 
 
 def main() -> None:
@@ -31,7 +36,7 @@ def main() -> None:
     comparator = AllQuantizationComparator(
         test_dir="/home/almeida/Cristobal/Test",
         config=config,
-        checkpoint_path=config.checkpoint_path,
+        checkpoint_path=_PROJECT_ROOT / config.checkpoint_path,
         batch_size=64,
     )
 
@@ -39,7 +44,7 @@ def main() -> None:
 
     AllQuantizationPlotter().plot(
         stats=all_stats,
-        output_path="outputs/figures/quantization/all_quantization_comparison.png",
+        output_path=_PROJECT_ROOT / "outputs/figures/quantization/all_quantization_comparison.png",
     )
 
 
