@@ -28,6 +28,7 @@ Description:
 from __future__ import annotations
 
 import typing as t
+from contextlib import nullcontext
 from pathlib import Path
 
 import torch
@@ -93,6 +94,14 @@ class Distiller:
         self.show_progress_bar = show_progress_bar
         self._processor        = PatchBatchProcessor(patch_size=16)
 
+        # Autocast: BF16 en Ampere+, FP16 en Volta/Turing, None en CPU
+        self._amp_dtype = self._select_amp_dtype()
+        self._scaler = (
+            torch.cuda.amp.GradScaler()
+            if self._amp_dtype == torch.float16
+            else None
+        )
+
         # Congelar profesor
         for param in self.teacher.parameters():
             param.requires_grad_(False)
@@ -148,6 +157,23 @@ class Distiller:
         }
 
     # ------------------------------------------------------------------
+    # Helpers internos
+    # ------------------------------------------------------------------
+
+    def _select_amp_dtype(self) -> t.Optional[torch.dtype]:
+        """Elige el dtype de precisión mixta según la capacidad de la GPU."""
+        if self.device.type != "cuda":
+            return None
+        cap = torch.cuda.get_device_capability(self.device)
+        return torch.bfloat16 if cap[0] >= 8 else torch.float16
+
+    def _autocast(self):
+        """Devuelve el contexto de autocast apropiado."""
+        if self._amp_dtype is None:
+            return nullcontext()
+        return torch.amp.autocast(device_type="cuda", dtype=self._amp_dtype)
+
+    # ------------------------------------------------------------------
     # Bucles internos
     # ------------------------------------------------------------------
 
@@ -165,20 +191,26 @@ class Distiller:
             labels = batch[0]["labels"].squeeze(-1).long().to(self.device, non_blocking=True)
 
             patches = self._processor.patchify(images)
-            model_dtype = next(self.student.parameters()).dtype
-            patches = patches.to(dtype=model_dtype)
-
-            with torch.inference_mode():
-                teacher_logits = self.teacher(patches)
-
-            student_logits = self.student(patches)
-            loss = self.criterion(student_logits, teacher_logits, labels)
 
             self.optimizer.zero_grad(set_to_none=True)
-            loss.backward()
-            if self.grad_clip_norm > 0:
+
+            with self._autocast():
+                with torch.inference_mode():
+                    teacher_logits = self.teacher(patches)
+                student_logits = self.student(patches)
+                loss = self.criterion(student_logits, teacher_logits, labels)
+
+            if self._scaler is not None:
+                self._scaler.scale(loss).backward()
+                self._scaler.unscale_(self.optimizer)
                 nn.utils.clip_grad_norm_(self.student.parameters(), self.grad_clip_norm)
-            self.optimizer.step()
+                self._scaler.step(self.optimizer)
+                self._scaler.update()
+            else:
+                loss.backward()
+                if self.grad_clip_norm > 0:
+                    nn.utils.clip_grad_norm_(self.student.parameters(), self.grad_clip_norm)
+                self.optimizer.step()
 
             total_loss += loss.item() * images.size(0)
             correct    += (student_logits.argmax(1) == labels).sum().item()
@@ -206,12 +238,11 @@ class Distiller:
                 labels = batch[0]["labels"].squeeze(-1).long().to(self.device, non_blocking=True)
 
                 patches = self._processor.patchify(images)
-                model_dtype = next(self.student.parameters()).dtype
-                patches = patches.to(dtype=model_dtype)
 
-                teacher_logits = self.teacher(patches)
-                student_logits = self.student(patches)
-                loss = self.criterion(student_logits, teacher_logits, labels)
+                with self._autocast():
+                    teacher_logits = self.teacher(patches)
+                    student_logits = self.student(patches)
+                    loss = self.criterion(student_logits, teacher_logits, labels)
 
                 total_loss += loss.item() * images.size(0)
                 correct    += (student_logits.argmax(1) == labels).sum().item()

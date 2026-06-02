@@ -74,10 +74,10 @@ class DistillationConfig:
     alpha: float = 0.70       # peso KL; 0.30 → CE con etiquetas hard
 
     # --- bucle de entrenamiento ---
-    epochs: int = 100
+    epochs: int = 40
     learning_rate: float = 1e-4
     weight_decay: float = 0.05
-    warmup_epochs: int = 10
+    warmup_epochs: int = 5
     grad_clip_norm: float = 1.0
     label_smoothing: float = 0.10
 
