@@ -35,6 +35,7 @@ import torch.nn as nn
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
 
+from transformer.training.batch_processor import PatchBatchProcessor
 from .losses import KnowledgeDistillationLoss
 from .visualization.plotter import DistillationPlotter
 
@@ -90,6 +91,7 @@ class Distiller:
         self.max_val_batches   = max_val_batches
         self.grad_clip_norm    = grad_clip_norm
         self.show_progress_bar = show_progress_bar
+        self._processor        = PatchBatchProcessor(patch_size=16)
 
         # Congelar profesor
         for param in self.teacher.parameters():
@@ -159,13 +161,17 @@ class Distiller:
         total_loss = correct = total = 0
 
         for batch in self.train_loader:
-            images = batch[0]["data"].to(self.device, non_blocking=True)
-            labels = batch[0]["label"].squeeze(-1).long().to(self.device, non_blocking=True)
+            images = batch[0]["images"].to(self.device, non_blocking=True)
+            labels = batch[0]["labels"].squeeze(-1).long().to(self.device, non_blocking=True)
+
+            patches = self._processor.patchify(images)
+            model_dtype = next(self.student.parameters()).dtype
+            patches = patches.to(dtype=model_dtype)
 
             with torch.inference_mode():
-                teacher_logits = self.teacher(images)
+                teacher_logits = self.teacher(patches)
 
-            student_logits = self.student(images)
+            student_logits = self.student(patches)
             loss = self.criterion(student_logits, teacher_logits, labels)
 
             self.optimizer.zero_grad(set_to_none=True)
@@ -196,11 +202,15 @@ class Distiller:
                 if self.max_val_batches and batch_idx >= self.max_val_batches:
                     break
 
-                images = batch[0]["data"].to(self.device, non_blocking=True)
-                labels = batch[0]["label"].squeeze(-1).long().to(self.device, non_blocking=True)
+                images = batch[0]["images"].to(self.device, non_blocking=True)
+                labels = batch[0]["labels"].squeeze(-1).long().to(self.device, non_blocking=True)
 
-                teacher_logits = self.teacher(images)
-                student_logits = self.student(images)
+                patches = self._processor.patchify(images)
+                model_dtype = next(self.student.parameters()).dtype
+                patches = patches.to(dtype=model_dtype)
+
+                teacher_logits = self.teacher(patches)
+                student_logits = self.student(patches)
                 loss = self.criterion(student_logits, teacher_logits, labels)
 
                 total_loss += loss.item() * images.size(0)

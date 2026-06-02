@@ -64,8 +64,8 @@ class DistillationConfig:
     """
 
     # --- rutas ---
-    teacher_path: Path = Path("checkpoints/transformer/best_transformer.pth")
-    student_path: Path = Path("checkpoints/pruning/tome/tome_model.pth")
+    teacher_path: Path = Path("checkpoints/transformer/best_transformer_e384.pth")
+    student_path: Path = Path("checkpoints/pruning/structured/structured_model.pth")
     output_path: Path = Path("checkpoints/distillation/student_distilled.pth")
     figure_path: Path = Path("outputs/figures/distillation/training_curves.png")
 
@@ -97,12 +97,12 @@ class DistillationConfig:
     image_size: int = 224
     patch_size: int = 16
     num_classes: int = 20
-    embed_dim: int = 768
+    embed_dim: int = 384
     depth: int = 12
-    num_heads: int = 12
+    num_heads: int = 6
     mlp_ratio: float = 4.0
-    dropout: float = 0.10
-    drop_path_rate: float = 0.20
+    dropout: float = 0.0
+    drop_path_rate: float = 0.0
 
     # --- ToMe en el estudiante (0 = desactivado) ---
     tome_r: int = 0
