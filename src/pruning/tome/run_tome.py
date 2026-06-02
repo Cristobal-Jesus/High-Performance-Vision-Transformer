@@ -100,7 +100,8 @@ def main() -> None:
     # --- 3. Evaluar modelo original ---
     print("[ToMe] Evaluando modelo original…")
     acc_orig, ms_orig = evaluate(
-        model_orig, val_loader, device, max_batches=cfg.max_val_batches
+        model_orig, val_loader, device,
+        patch_size=cfg.patch_size, max_batches=cfg.max_val_batches,
     )
     total_orig, nz_orig = count_nonzero_params(model_orig)
     stats_orig = PruningStats(
@@ -135,7 +136,8 @@ def main() -> None:
     dm.teardown()
     dm, val_loader = _build_val_loader(cfg, cfg.device_id)
     acc_tome, ms_tome = evaluate(
-        model_tome, val_loader, device, max_batches=cfg.max_val_batches
+        model_tome, val_loader, device,
+        patch_size=cfg.patch_size, max_batches=cfg.max_val_batches,
     )
     total_tome, nz_tome = count_nonzero_params(model_tome)
     stats_tome = PruningStats(

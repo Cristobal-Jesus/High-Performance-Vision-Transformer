@@ -98,7 +98,8 @@ def main() -> None:
     # --- 3. Evaluar línea base ---
     print("[Structured] Evaluando modelo original…")
     acc_orig, ms_orig = evaluate(
-        model, val_loader, device, max_batches=cfg.max_val_batches
+        model, val_loader, device,
+        patch_size=cfg.patch_size, max_batches=cfg.max_val_batches,
     )
     total_orig, nz_orig = count_nonzero_params(model)
     stats_orig = PruningStats(
@@ -120,7 +121,8 @@ def main() -> None:
     dm.teardown()
     dm, val_loader = _build_val_loader(cfg, cfg.device_id)
     acc_pruned, ms_pruned = evaluate(
-        model, val_loader, device, max_batches=cfg.max_val_batches
+        model, val_loader, device,
+        patch_size=cfg.patch_size, max_batches=cfg.max_val_batches,
     )
     total_pruned, nz_pruned = count_nonzero_params(model)
     stats_pruned = PruningStats(

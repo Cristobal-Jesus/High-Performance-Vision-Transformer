@@ -22,12 +22,15 @@ from typing import Tuple
 import torch
 import torch.nn as nn
 
+from transformer.training.batch_processor import PatchBatchProcessor
+
 
 def evaluate(
     model: nn.Module,
     val_loader,
     device: torch.device,
     *,
+    patch_size: int = 16,
     max_batches: int | None = None,
 ) -> Tuple[float, float]:
     """Evalúa el modelo sobre el val_loader y devuelve (accuracy, ms/img).
@@ -36,12 +39,15 @@ def evaluate(
         model:       Modelo en modo eval ya sobre ``device``.
         val_loader:  Iterador DALI de validación.
         device:      Dispositivo de inferencia.
+        patch_size:  Tamaño de parche para parchificar las imágenes antes
+                     de pasarlas al ViT.
         max_batches: Si se especifica, evalúa solo los primeros N batches.
 
     Returns:
         Tupla ``(top1_accuracy_pct, ms_per_image)``.
     """
     model.eval()
+    processor = PatchBatchProcessor(patch_size=patch_size)
     correct = total = 0
     elapsed = 0.0
 
@@ -50,12 +56,15 @@ def evaluate(
             if max_batches is not None and batch_idx >= max_batches:
                 break
 
-            # DALI devuelve una lista de dicts con claves "data" y "label"
-            images = batch[0]["data"].to(device, non_blocking=True)
-            labels = batch[0]["label"].squeeze(-1).long().to(device, non_blocking=True)
+            # DALI devuelve una lista de dicts con claves "images" y "labels"
+            images = batch[0]["images"].to(device, non_blocking=True)
+            labels = batch[0]["labels"].squeeze(-1).long().to(device, non_blocking=True)
+
+            # El ViT necesita la entrada parchificada: (B, seq_len, patch_dim)
+            patches = processor.patchify(images)
 
             t0 = time.perf_counter()
-            logits = model(images)
+            logits = model(patches)
             torch.cuda.synchronize(device)
             elapsed += time.perf_counter() - t0
 
