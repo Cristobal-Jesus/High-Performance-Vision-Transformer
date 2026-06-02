@@ -63,6 +63,10 @@ def evaluate(
             # El ViT necesita la entrada parchificada: (B, seq_len, patch_dim)
             patches = processor.patchify(images)
 
+            # Alinear dtype con el del modelo (el checkpoint puede estar en FP16/BF16)
+            model_dtype = next(model.parameters()).dtype
+            patches = patches.to(dtype=model_dtype)
+
             t0 = time.perf_counter()
             logits = model(patches)
             torch.cuda.synchronize(device)
