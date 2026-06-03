@@ -233,12 +233,19 @@ class DDPTrainingApplication(TransformerTrainingApplication):
     # ------------------------------------------------------------------
 
     def run(self) -> None:
-        """Ejecuta el entrenamiento DDP.
+        """Ejecuta el entrenamiento DDP midiendo la energía de todas las GPUs.
 
-        Todos los rangos construyen sus pipelines y ejecutan el bucle de
-        entrenamiento en lockstep (DDP lo exige para sincronizar gradientes).
-        Solo el rango 0 mide energía, imprime resultados y guarda la gráfica.
+        Todos los rangos miden su propia GPU con EML.  Al terminar el
+        entrenamiento se usa ``dist.all_reduce`` para sumar la energía de
+        todas las GPUs en el rango 0, que es el único que imprime y guarda
+        la gráfica.
         """
+        from transformer.training.energy.cpu_energy_meter import RAPLCPUEnergyMeter
+        from transformer.training.energy.gpu_energy_meter import (
+            EMLGPUEnergyMeter,
+            SlurmGPUSelector,
+        )
+
         self._configure_torch_backends()
 
         device      = self._get_device()
@@ -251,12 +258,37 @@ class DDPTrainingApplication(TransformerTrainingApplication):
             val_loader=data_module.val_dataloader(),
         )
 
+        # Cada rango mide su propia GPU (local_rank como índice explícito)
+        gpu_meter = EMLGPUEnergyMeter(SlurmGPUSelector(self._local_rank))
+
         if is_main_process():
-            self._run_with_energy_measurement(trainer)
+            cpu_meter = RAPLCPUEnergyMeter()
+            (result, eml_meas, elapsed, device_key), cpu_metrics = cpu_meter.measure(
+                lambda: gpu_meter.measure(lambda: trainer.fit(self.config.epochs))
+            )
         else:
-            # Los rangos no-principales ejecutan fit sin medición de energía,
-            # pero deben mantenerse en lockstep con el rango 0.
-            trainer.fit(self.config.epochs)
+            cpu_metrics = None
+            result, eml_meas, elapsed, device_key = gpu_meter.measure(
+                lambda: trainer.fit(self.config.epochs)
+            )
+
+        # Sumar la energía de todas las GPUs en rango 0 vía all_reduce
+        local_energy_j = gpu_meter.extract_metrics(eml_meas, device_key)["gpu_energy_j"]
+        energy_tensor  = torch.tensor([local_energy_j], device=device, dtype=torch.float64)
+        torch.distributed.all_reduce(energy_tensor, op=torch.distributed.ReduceOp.SUM)
+        total_gpu_energy_j = energy_tensor.item()
+
+        if is_main_process():
+            gpu_metrics = gpu_meter.extract_metrics(eml_meas, device_key)
+            # Reemplazar la energía local por la suma total de todas las GPUs
+            gpu_metrics["gpu_energy_j"]  = total_gpu_energy_j
+            gpu_metrics["gpu_energy_uj"] = total_gpu_energy_j * 1e6
+            # Potencia media aproximada: energía total / tiempo transcurrido
+            gpu_metrics["gpu_avg_power_w"] = total_gpu_energy_j / max(elapsed, 1e-9)
+
+            self._print_results(result, gpu_metrics, cpu_metrics)
+            self._save_plot(trainer, gpu_metrics, eml_meas,
+                            cpu_metrics, device_key, elapsed)
 
         data_module.teardown()
 
@@ -272,55 +304,45 @@ class DDPTrainingApplication(TransformerTrainingApplication):
         if self.config.cudnn_benchmark:
             torch.backends.cudnn.benchmark = True
 
-    def _run_with_energy_measurement(self, trainer: TransformerTrainer) -> None:
-        """Ejecuta el fit rodeado de medidores de energía (solo rango 0).
-
-        Args:
-            trainer: Trainer ya construido y listo para ejecutar.
-        """
-        from transformer.training.energy.cpu_energy_meter import RAPLCPUEnergyMeter
-        from transformer.training.energy.gpu_energy_meter import (
-            EMLGPUEnergyMeter,
-            SlurmGPUSelector,
-        )
-
-        gpu_meter = EMLGPUEnergyMeter(SlurmGPUSelector(self.config.eml_gpu_index))
-        cpu_meter = RAPLCPUEnergyMeter()
-
-        (result, eml_meas, elapsed, device_key), cpu_metrics = cpu_meter.measure(
-            lambda: gpu_meter.measure(lambda: trainer.fit(self.config.epochs))
-        )
-
-        self._print_results(result, gpu_meter, eml_meas, cpu_metrics, device_key)
-        self._save_plot(trainer, gpu_meter, eml_meas, cpu_metrics, device_key, elapsed)
-
     def _print_results(
         self,
-        result,
-        gpu_meter,
-        eml_meas,
-        cpu_metrics,
-        device_key: str,
+        result: dict,
+        gpu_metrics: dict,
+        cpu_metrics: dict,
     ) -> None:
-        """Imprime las métricas finales de entrenamiento y energía (rango 0)."""
-        gpu_metrics = gpu_meter.extract_metrics(eml_meas, device_key)
-        print(f"[DDP] Best val loss  : {result['best_val_loss']:.4f}")
-        print(f"[DDP] Best epoch     : {result['best_epoch']}")
-        print(f"[DDP] GPU energy     : {gpu_metrics['gpu_energy_j']:.2f} J")
-        print(f"[DDP] GPU avg power  : {gpu_metrics['gpu_avg_power_w']:.2f} W")
-        print(f"[DDP] CPU energy     : {cpu_metrics['cpu_rapl_files_j']:.2f} J")
+        """Imprime las métricas finales de entrenamiento y energía (rango 0).
+
+        Args:
+            result:      Resultado de ``trainer.fit()``.
+            gpu_metrics: Métricas GPU con energía total de todas las GPUs.
+            cpu_metrics: Métricas de energía CPU (RAPL).
+        """
+        print(f"[DDP] Best val loss      : {result['best_val_loss']:.4f}")
+        print(f"[DDP] Best epoch         : {result['best_epoch']}")
+        print(f"[DDP] GPU energy (total) : {gpu_metrics['gpu_energy_j']:.2f} J  "
+              f"({self._world_size} GPUs sumadas)")
+        print(f"[DDP] GPU avg power      : {gpu_metrics['gpu_avg_power_w']:.2f} W")
+        print(f"[DDP] CPU energy         : {cpu_metrics['cpu_rapl_files_j']:.2f} J")
 
     def _save_plot(
         self,
         trainer: TransformerTrainer,
-        gpu_meter,
-        eml_meas,
-        cpu_metrics,
+        gpu_metrics: dict,
+        eml_meas: dict,
+        cpu_metrics: dict,
         device_key: str,
         elapsed: float,
     ) -> None:
-        """Genera y guarda la gráfica de curvas de entrenamiento (rango 0)."""
-        gpu_metrics  = gpu_meter.extract_metrics(eml_meas, device_key)
+        """Genera y guarda la gráfica de curvas de entrenamiento (rango 0).
+
+        Args:
+            trainer:     Trainer con el plotter ya actualizado.
+            gpu_metrics: Métricas GPU con energía total de todas las GPUs.
+            eml_meas:    Mediciones EML originales del rango 0 (para el dict).
+            cpu_metrics: Métricas de energía CPU.
+            device_key:  Clave EML del dispositivo del rango 0.
+            elapsed:     Tiempo total de entrenamiento en segundos.
+        """
         energy_stats = self._build_energy_stats(
             eml_measurements=eml_meas,
             gpu_metrics=gpu_metrics,
@@ -331,7 +353,7 @@ class DDPTrainingApplication(TransformerTrainingApplication):
             save_path=self.config.figure_path,
             energy_stats={"meas": energy_stats, "elapsed": elapsed},
             device_info=self._get_device_info(),
-            show_power=False,   # DDP: el rango 0 no tiene mediciones por cada GPU
+            show_power=False,
         )
 
 
