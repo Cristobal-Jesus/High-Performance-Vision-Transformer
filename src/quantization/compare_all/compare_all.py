@@ -10,8 +10,9 @@ File: quantization/compare_all/compare_all.py
 
 Description:
     Entry point for the combined quantization comparison.
-    Benchmarks FP32, INT8, INT4, INT2 and INT1 in a single run and
-    saves a publication-quality three-panel comparison figure.
+    Benchmarks FP32, FP16, BF16, INT8, INT4, INT2 and INT1 in a single run
+    and saves three separate publication-quality comparison figures
+    (accuracy, model size and accuracy-vs-compression trade-off).
 
 Usage:
     python -m quantization.compare_all.compare_all
@@ -44,7 +45,8 @@ def main() -> None:
 
     AllQuantizationPlotter().plot(
         stats=all_stats,
-        output_path=_PROJECT_ROOT / "outputs/figures/quantization/all_quantization_comparison.png",
+        output_dir=_PROJECT_ROOT / "outputs/figures/quantization",
+        basename="all_quantization_comparison",
     )
 
 

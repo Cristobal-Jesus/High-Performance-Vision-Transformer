@@ -9,10 +9,11 @@ Author: Cristóbal Jesús Sarmiento Rodríguez
 File: quantization/compare_all/plotter.py
 
 Description:
-    Publication-quality figure comparing all quantization variants
-    (FP32, INT8, INT4, INT2, INT1) across three panels:
+    Publication-quality figures comparing all quantization variants
+    (FP32, FP16, BF16, INT8, INT4, INT2, INT1).  Each metric is saved as
+    its own separate figure:
 
-        1. Top-1 Accuracy — vertical bar chart with FP32 reference line
+        1. Accuracy — vertical bar chart with FP32 reference line
            and per-bar accuracy-drop annotation.
         2. Model Size — vertical bar chart with compression-ratio labels
            and a note distinguishing actual from theoretical sizes.
@@ -27,7 +28,6 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import matplotlib.ticker as mticker
-import numpy as np
 
 from .stats import VariantStats
 
@@ -38,6 +38,8 @@ from .stats import VariantStats
 # One colour per variant — gradient from precision (blue) to aggression (red)
 _COLORS: dict[str, str] = {
     "FP32": "#2B7BB9",
+    "FP16": "#5DADE2",
+    "BF16": "#48C9B0",
     "INT8": "#27AE60",
     "INT4": "#F39C12",
     "INT2": "#E67E22",
@@ -53,10 +55,10 @@ _FONT_FAMILY = "DejaVu Sans"
 
 
 class AllQuantizationPlotter:
-    """Generate a three-panel publication-quality comparison figure.
+    """Generate three separate publication-quality comparison figures.
 
-    The figure compares FP32, INT8, INT4, INT2 and INT1 across:
-        - Top-1 accuracy.
+    The figures compare FP32, FP16, BF16, INT8, INT4, INT2 and INT1 across:
+        - Accuracy.
         - Model size on disk / theoretical packed size.
         - Accuracy vs. compression trade-off curve.
     """
@@ -64,14 +66,50 @@ class AllQuantizationPlotter:
     def plot(
         self,
         stats: list[VariantStats],
-        output_path: str | Path,
-    ) -> None:
-        """Save the comparison figure to *output_path*.
+        output_dir: str | Path,
+        basename: str = "all_quantization_comparison",
+    ) -> list[Path]:
+        """Save the comparison as three separate figures in *output_dir*.
 
         Args:
             stats: One ``VariantStats`` per variant, ordered FP32 → INT1.
-            output_path: Destination path for the PNG figure.
+            output_dir: Destination directory for the three PNG figures.
+            basename: Common prefix for the file names.  The suffixes
+                ``_accuracy``, ``_size`` and ``_tradeoff`` are appended.
+
+        Returns:
+            The list of paths written, in the order accuracy, size, trade-off.
         """
+        self._apply_style()
+
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        panels = (
+            ("accuracy", self._plot_accuracy, "VisionTransformer — Accuracy"),
+            ("size", self._plot_size, "VisionTransformer — Model Size"),
+            (
+                "tradeoff",
+                self._plot_tradeoff,
+                "VisionTransformer — Accuracy vs. Compression Trade-off",
+            ),
+        )
+
+        saved: list[Path] = []
+        for suffix, panel_fn, title in panels:
+            path = output_dir / f"{basename}_{suffix}.png"
+            self._make_single_figure(panel_fn, stats, path, title)
+            saved.append(path)
+
+        return saved
+
+    # ------------------------------------------------------------------
+    # Figure assembly
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _apply_style() -> None:
+        """Apply the shared Matplotlib style for all figures."""
         plt.rcParams.update({
             "font.family": _FONT_FAMILY,
             "axes.spines.top": False,
@@ -86,21 +124,40 @@ class AllQuantizationPlotter:
             "ytick.color": _TEXT_COLOR,
         })
 
-        fig = plt.figure(figsize=(18, 7), facecolor="white")
-        fig.subplots_adjust(
-            left=0.06, right=0.97, top=0.84, bottom=0.14, wspace=0.32
+    def _make_single_figure(
+        self,
+        panel_fn,
+        stats: list[VariantStats],
+        output_path: Path,
+        title: str,
+    ) -> None:
+        """Build one standalone figure for a single metric panel.
+
+        Args:
+            panel_fn: One of the ``_plot_*`` panel-drawing methods.
+            stats: All variant statistics.
+            output_path: Destination path for the PNG figure.
+            title: Figure-specific title shown at the top.
+        """
+        fp32_acc = stats[0].accuracy
+
+        fig, ax = plt.subplots(figsize=(8.5, 6.5), facecolor="white")
+        panel_fn(ax, stats)
+
+        fig.suptitle(
+            title,
+            fontsize=15, fontweight="bold", color=_TEXT_COLOR,
+        )
+        fig.text(
+            0.5, 0.915,
+            f"20-class dataset · FP32 baseline: {fp32_acc:.2f}%",
+            ha="center", va="top",
+            fontsize=9, color=_REF_LINE_COLOR, style="italic",
         )
 
-        ax_acc, ax_size, ax_tradeoff = fig.subplots(1, 3)
-
-        self._plot_accuracy(ax_acc, stats)
-        self._plot_size(ax_size, stats)
-        self._plot_tradeoff(ax_tradeoff, stats)
-        self._add_title(fig, stats)
         self._add_legend(fig, stats)
+        fig.subplots_adjust(left=0.12, right=0.95, top=0.85, bottom=0.20)
 
-        output_path = Path(output_path)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(output_path, dpi=180, bbox_inches="tight", facecolor="white")
         plt.close(fig)
         print(f"Figure saved → {output_path}")
@@ -110,7 +167,7 @@ class AllQuantizationPlotter:
     # ------------------------------------------------------------------
 
     def _plot_accuracy(self, ax, stats: list[VariantStats]) -> None:
-        """Draw the Top-1 Accuracy bar chart.
+        """Draw the Accuracy bar chart.
 
         Args:
             ax: Target Axes.
@@ -159,7 +216,6 @@ class AllQuantizationPlotter:
                 zorder=4,
             )
 
-        ax.set_title("Top-1 Accuracy", fontsize=13, fontweight="bold", pad=10)
         ax.set_ylabel("Accuracy (%)", fontsize=10)
         ax.yaxis.set_minor_locator(mticker.AutoMinorLocator(2))
         ax.set_axisbelow(True)
@@ -215,7 +271,6 @@ class AllQuantizationPlotter:
             style="italic",
         )
 
-        ax.set_title("Model Size", fontsize=13, fontweight="bold", pad=10)
         ax.set_ylabel("Size (MB)", fontsize=10)
         ax.set_axisbelow(True)
 
@@ -254,12 +309,17 @@ class AllQuantizationPlotter:
                 linewidths=0.8,
                 zorder=5,
             )
-            # Label offset: avoid overlapping FP32 (ratio=1) with INT8 (ratio=4)
+            # Label offset: avoid overlapping points that share a ratio.
+            # FP16 and BF16 both sit at 2× → split them vertically.
             offset_x = ratio * 0.08
             offset_y = 0.4
             if stat.label == "FP32":
                 offset_x = -ratio * 0.05
                 offset_y = -1.2
+            elif stat.label == "FP16":
+                offset_y = 0.6
+            elif stat.label == "BF16":
+                offset_y = -1.4
             ax.text(
                 ratio + offset_x,
                 acc + offset_y,
@@ -299,10 +359,6 @@ class AllQuantizationPlotter:
         )
         ax.set_xticks([1, 2, 4, 8, 16, 32])
 
-        ax.set_title(
-            "Accuracy vs. Compression Trade-off",
-            fontsize=13, fontweight="bold", pad=10,
-        )
         ax.set_xlabel("Compression ratio (log₂ scale)", fontsize=10)
         ax.set_ylabel("Accuracy (%)", fontsize=10)
         ax.grid(True, which="both", color=_GRID_COLOR, linewidth=0.7)
@@ -314,36 +370,12 @@ class AllQuantizationPlotter:
         )
 
     # ------------------------------------------------------------------
-    # Title and legend
+    # Shared legend
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _add_title(fig, stats: list[VariantStats]) -> None:
-        """Add a main title and subtitle to the figure.
-
-        Args:
-            fig: The Figure object.
-            stats: Used to report the FP32 baseline accuracy.
-        """
-        fp32_acc = stats[0].accuracy
-        fig.text(
-            0.5, 0.96,
-            "VisionTransformer — Quantization Comparison",
-            ha="center", va="top",
-            fontsize=16, fontweight="bold",
-            color=_TEXT_COLOR,
-        )
-        fig.text(
-            0.5, 0.905,
-            f"20-class dataset · ViT-Small (embed=384) · FP32 baseline: {fp32_acc:.2f}%",
-            ha="center", va="top",
-            fontsize=10, color=_REF_LINE_COLOR,
-            style="italic",
-        )
-
-    @staticmethod
     def _add_legend(fig, stats: list[VariantStats]) -> None:
-        """Add a shared colour legend below the three panels.
+        """Add a shared colour legend below the panel.
 
         Args:
             fig: The Figure object.
@@ -361,9 +393,9 @@ class AllQuantizationPlotter:
         fig.legend(
             handles=patches,
             loc="lower center",
-            ncol=len(stats),
+            ncol=min(len(stats), 4),
             fontsize=9,
             framealpha=0.9,
             edgecolor="#BDC3C7",
-            bbox_to_anchor=(0.5, 0.01),
+            bbox_to_anchor=(0.5, 0.005),
         )
