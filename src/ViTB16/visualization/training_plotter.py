@@ -68,9 +68,10 @@ class TrainingPlotter:
         self._plot_loss(axes[1], epochs)
 
         if energy_stats is not None:
+            fig.tight_layout(rect=[0, 0.18, 1, 1])
             self._add_energy_text(fig, energy_stats, device_info)
-
-        fig.tight_layout()
+        else:
+            fig.tight_layout()
 
         if save_path is not None:
             output_path = Path(save_path)
@@ -104,7 +105,7 @@ class TrainingPlotter:
 
         axis.set_title("Accuracy")
         axis.set_xlabel("Epoch")
-        axis.set_ylabel("Accuracy")
+        axis.set_ylabel("Accuracy (%)")
         axis.legend()
 
     def _plot_loss(self, axis, epochs: List[int]) -> None:
@@ -123,22 +124,23 @@ class TrainingPlotter:
         device_info: Optional[str],
     ) -> None:
         """Add energy and device information to the figure."""
-        gpu_joules, cpu_joules, elapsed_seconds = self._extract_energy_stats(energy_stats)
+        gpu_joules, _cpu_joules, elapsed_seconds = self._extract_energy_stats(energy_stats)
         total_joules = gpu_joules + cpu_joules
 
         text = (
-            f"Device: {device_info or 'Unknown'}\n"
-            f"GPU Energy: {gpu_joules:.4f} J\n"
-            f"CPU Energy: {cpu_joules:.4f} J\n"
-            f"Total Energy: {total_joules:.4f} J\n"
-            f"Time: {elapsed_seconds / 60:.2f} min"
+            "Device: {}   |   GPU Energy: {:.4f} J   |   Time: {:.2f} min"
+        ).format(
+            device_info or "Unknown",
+            gpu_joules,
+            elapsed_seconds / 60,
         )
 
         figure.text(
-            0.02,
-            0.02,
+            0.5,
+            0.04,
             text,
             fontsize=9,
+            ha="center",
             verticalalignment="bottom",
             bbox={"boxstyle": "round", "facecolor": "white", "alpha": 0.85},
         )
